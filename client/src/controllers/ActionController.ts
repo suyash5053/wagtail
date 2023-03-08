@@ -19,6 +19,7 @@ import { WAGTAIL_CONFIG } from '../config/wagtailConfig';
 export class ActionController extends Controller<
   HTMLButtonElement | HTMLInputElement
 > {
+  static targets = ['element'];
   static values = {
     continue: { type: Boolean, default: false },
     url: String,
@@ -55,5 +56,9 @@ export class ActionController extends Controller<
 
     document.body.appendChild(formElement);
     formElement.submit();
+  }
+
+  click(){
+    this.element.click();
   }
 }
