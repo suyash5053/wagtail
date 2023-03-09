@@ -1,6 +1,7 @@
 import { Application } from '@hotwired/stimulus';
 import { ActionController } from './ActionController';
 
+
 describe('ActionController', () => {
   beforeEach(() => {
     document.body.innerHTML = `
@@ -28,5 +29,20 @@ describe('ActionController', () => {
     expect(form.action).toBe('https://www.github.com/');
     expect(new FormData(form).get('csrfmiddlewaretoken')).toBe('potato');
     expect(new FormData(form).get('next')).toBe('http://localhost/');
+  });
+
+  it('should trigger a click event on the element', () => {
+    // Call the click() method
+    ActionController.click();
+
+    // Simulate a click event on the element
+    const event = new MouseEvent('click', {
+      bubbles: true,
+      cancelable: true,
+    });
+    ActionController.element.dispatchEvent(event);
+
+    // Assert that the click event was triggered
+    expect(ActionController.element.classList.contains('clicked')).toBe(true);
   });
 });
