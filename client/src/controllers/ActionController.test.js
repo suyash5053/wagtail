@@ -33,6 +33,7 @@ describe('ActionController', () => {
   it('should trigger a click event on the element', () => {
     const btn = document.querySelector('[data-controller="w-action"]');
     const clickMock = jest.fn();
+
     btn.addEventListener('click', clickMock);
     btn.click();
 
