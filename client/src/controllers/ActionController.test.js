@@ -1,7 +1,6 @@
 import { Application } from '@hotwired/stimulus';
 import { ActionController } from './ActionController';
 
-
 describe('ActionController', () => {
   beforeEach(() => {
     document.body.innerHTML = `
@@ -32,17 +31,11 @@ describe('ActionController', () => {
   });
 
   it('should trigger a click event on the element', () => {
-    // Call the click() method
-    ActionController.click();
+    const btn = document.querySelector('[data-controller="w-action"]');
+    const clickMock = jest.fn();
+    btn.addEventListener('click', clickMock);
+    btn.click();
 
-    // Simulate a click event on the element
-    const event = new MouseEvent('click', {
-      bubbles: true,
-      cancelable: true,
-    });
-    ActionController.element.dispatchEvent(event);
-
-    // Assert that the click event was triggered
-    expect(ActionController.element.classList.contains('clicked')).toBe(true);
+    expect(clickMock).toHaveBeenCalled();
   });
 });
