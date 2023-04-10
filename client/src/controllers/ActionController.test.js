@@ -36,8 +36,8 @@ describe('ActionController', () => {
       const mockElement = {
         click: jest.fn(),
       };
-      const actionController = new ActionController();
-      actionController.click(mockElement);
+      const actionController = new ActionController(mockElement);
+      actionController.click();
       expect(mockElement.click).toHaveBeenCalled();
     });
   });

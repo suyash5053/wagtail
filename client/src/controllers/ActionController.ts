@@ -57,7 +57,7 @@ export class ActionController extends Controller<
     formElement.submit();
   }
 
-  click() {
-    this.element.click();
+  click(element: HTMLButtonElement) {
+    element.click();
   }
 }
