@@ -30,13 +30,15 @@ describe('ActionController', () => {
     expect(new FormData(form).get('next')).toBe('http://localhost/');
   });
 
-  it('should trigger a click event on the element', () => {
-    const btn = document.querySelector('[data-controller="w-action"]');
-    const clickMock = jest.fn();
-
-    btn.addEventListener('click', clickMock);
-    btn.click();
-
-    expect(clickMock).toHaveBeenCalled();
+  describe('click', () => {
+    it('should call the element click method', () => {
+      // mock element with click method
+      const mockElement = {
+        click: jest.fn(),
+      };
+      const actionController = new ActionController();
+      actionController.click(mockElement);
+      expect(mockElement.click).toHaveBeenCalled();
+    });
   });
 });
