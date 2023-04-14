@@ -31,14 +31,33 @@ describe('ActionController', () => {
   });
 
   describe('click', () => {
-    it('should call the element click method', () => {
-      // mock element with click method
-      const mockElement = {
-        click: jest.fn(),
-      };
-      const actionController = new ActionController(mockElement);
-      actionController.click();
-      expect(mockElement.click).toHaveBeenCalled();
+    let app;
+    beforeEach(() => {
+      document.body.innerHTML = `
+      <button
+        id="button"
+        data-controller="w-action"
+        data-action="click->w-action#click"
+      >
+        Foo
+      </button>
+      `;
+      app = Application.start();
+      app.register('w-action', ActionController);
+    });
+
+    afterEach(() => {
+      app.stop();
+    });
+
+    it('should call click method when button is clicked via Stimulus action', () => {
+      const btn = document.querySelector('#button');
+      const clickMock = jest.fn();
+      HTMLButtonElement.prototype.click = clickMock;
+
+      btn.click();
+
+      expect(clickMock).toHaveBeenCalled();
     });
   });
 });
