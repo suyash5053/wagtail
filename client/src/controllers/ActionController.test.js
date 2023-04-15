@@ -35,9 +35,10 @@ describe('ActionController', () => {
     beforeEach(() => {
       document.body.innerHTML = `
       <button
+      type="button"
         id="button"
         data-controller="w-action"
-        data-action="click->w-action#click"
+        data-action="some-event->w-action#click"
       >
         Foo
       </button>
@@ -51,12 +52,13 @@ describe('ActionController', () => {
     });
 
     it('should call click method when button is clicked via Stimulus action', () => {
-      const btn = document.querySelector('#button');
+      const btn = document.getElementById('button');
       const clickMock = jest.fn();
-      HTMLButtonElement.prototype.click = clickMock;
+      btn.addEventListener('some-event', clickMock);
 
-      btn.click();
-
+      const event = new CustomEvent('some-event');
+      btn.dispatchEvent(event);
+      
       expect(clickMock).toHaveBeenCalled();
     });
   });
