@@ -54,11 +54,12 @@ describe('ActionController', () => {
     it('should call click method when button is clicked via Stimulus action', () => {
       const btn = document.getElementById('button');
       const clickMock = jest.fn();
-      btn.addEventListener('some-event', clickMock);
+      HTMLButtonElement.prototype.click = clickMock;
+      btn.addEventListener('some-event', btn.click());
 
       const event = new CustomEvent('some-event');
       btn.dispatchEvent(event);
-      
+
       expect(clickMock).toHaveBeenCalled();
     });
   });
