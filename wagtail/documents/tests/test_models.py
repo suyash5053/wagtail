@@ -18,7 +18,9 @@ from wagtail.test.testapp.models import CustomDocument, ReimportedDocumentModel
 from wagtail.test.utils import WagtailTestUtils
 
 
-class TestDocumentQuerySet(TestCase):
+class TestDocumentQuerySet(TransactionTestCase):
+    fixtures = ["test_empty.json"]
+
     def test_search_method(self):
         # Make a test document
         document = models.Document.objects.create(title="Test document")
@@ -42,9 +44,13 @@ class TestDocumentQuerySet(TestCase):
         aaa_document = models.Document.objects.create(title="AAA Test document")
         zzz_document = models.Document.objects.create(title="ZZZ Test document")
 
-        results = models.Document.objects.order_by("title").search("Test")
+        results = models.Document.objects.order_by("title").search(
+            "Test", order_by_relevance=False
+        )
         self.assertEqual(list(results), [aaa_document, zzz_document])
-        results = models.Document.objects.order_by("-title").search("Test")
+        results = models.Document.objects.order_by("-title").search(
+            "Test", order_by_relevance=False
+        )
         self.assertEqual(list(results), [zzz_document, aaa_document])
 
 
@@ -126,6 +132,19 @@ class TestDocumentFilenameProperties(TestCase):
             "application/octet-stream", self.extensionless_document.content_type
         )
 
+    def test_file_hash(self):
+        self.assertEqual(
+            self.document.get_file_hash(), "7d8c4778b182e4f3bd442408c64a6e22a4b0ed85"
+        )
+        self.assertEqual(
+            self.pdf_document.get_file_hash(),
+            "7d8c4778b182e4f3bd442408c64a6e22a4b0ed85",
+        )
+        self.assertEqual(
+            self.extensionless_document.get_file_hash(),
+            "7d8c4778b182e4f3bd442408c64a6e22a4b0ed85",
+        )
+
     def test_content_disposition(self):
         self.assertEqual(
             """attachment; filename=example.doc; filename*=UTF-8''example.doc""",
@@ -159,17 +178,7 @@ class TestFilesDeletedForDefaultModels(TransactionTestCase):
         https://docs.djangoproject.com/en/1.10/topics/db/transactions/#use-in-tests
     """
 
-    def setUp(self):
-        # Required to create root collection because the TransactionTestCase
-        # does not make initial data loaded in migrations available and
-        # serialized_rollback=True causes other problems in the test suite.
-        # ref: https://docs.djangoproject.com/en/1.10/topics/testing/overview/#rollback-emulation
-        Collection.objects.get_or_create(
-            name="Root",
-            path="0001",
-            depth=1,
-            numchild=0,
-        )
+    fixtures = ["test_empty.json"]
 
     def test_document_file_deleted_oncommit(self):
         with transaction.atomic():

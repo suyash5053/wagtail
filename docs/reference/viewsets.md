@@ -79,8 +79,15 @@ Viewsets are Wagtail's mechanism for defining a group of related admin views wit
 ```{eval-rst}
 .. autoclass:: wagtail.snippets.views.snippets.SnippetViewSet
 
+   .. autoattribute:: icon
    .. autoattribute:: list_display
+   .. autoattribute:: list_filter
    .. autoattribute:: filterset_class
+   .. autoattribute:: list_per_page
+   .. autoattribute:: admin_url_namespace
+   .. autoattribute:: base_url_path
+   .. autoattribute:: chooser_admin_url_namespace
+   .. autoattribute:: chooser_base_url_path
    .. autoattribute:: index_view_class
    .. autoattribute:: add_view_class
    .. autoattribute:: edit_view_class
@@ -96,4 +103,23 @@ Viewsets are Wagtail's mechanism for defining a group of related admin views wit
    .. autoattribute:: preview_on_edit_view_class
    .. autoattribute:: lock_view_class
    .. autoattribute:: unlock_view_class
+   .. autoattribute:: chooser_viewset_class
+   .. autoattribute:: template_prefix
+   .. autoattribute:: index_template_name
+   .. autoattribute:: index_results_template_name
+   .. autoattribute:: create_template_name
+   .. autoattribute:: edit_template_name
+   .. autoattribute:: delete_template_name
+   .. autoattribute:: history_template_name
+   .. automethod:: get_queryset
+   .. automethod:: get_index_template
+   .. automethod:: get_index_results_template
+   .. automethod:: get_create_template
+   .. automethod:: get_edit_template
+   .. automethod:: get_delete_template
+   .. automethod:: get_history_template
+   .. automethod:: get_admin_url_namespace
+   .. automethod:: get_admin_base_path
+   .. automethod:: get_chooser_admin_url_namespace
+   .. automethod:: get_chooser_admin_base_path
 ```

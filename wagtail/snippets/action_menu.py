@@ -147,7 +147,7 @@ class WorkflowMenuItem(ActionMenuItem):
 
     def get_url(self, parent_context):
         instance = parent_context["instance"]
-        url_name = instance.get_admin_url_namespace() + ":collect_workflow_action_data"
+        url_name = instance.snippet_viewset.get_url_name("collect_workflow_action_data")
         return reverse(
             url_name,
             args=(
@@ -196,7 +196,7 @@ class CancelWorkflowMenuItem(ActionMenuItem):
 class UnpublishMenuItem(ActionMenuItem):
     label = _("Unpublish")
     name = "action-unpublish"
-    icon_name = "download-alt"
+    icon_name = "download"
     classname = "action-secondary"
 
     def is_shown(self, context):
@@ -208,12 +208,9 @@ class UnpublishMenuItem(ActionMenuItem):
         return False
 
     def get_url(self, context):
-        app_label = context["model"]._meta.app_label
-        model_name = context["model"]._meta.model_name
-        return reverse(
-            f"wagtailsnippets_{app_label}_{model_name}:unpublish",
-            args=[quote(context["instance"].pk)],
-        )
+        instance = context["instance"]
+        url_name = instance.snippet_viewset.get_url_name("unpublish")
+        return reverse(url_name, args=[quote(instance.pk)])
 
 
 class DeleteMenuItem(ActionMenuItem):
@@ -232,18 +229,15 @@ class DeleteMenuItem(ActionMenuItem):
         )
 
     def get_url(self, context):
-        app_label = context["model"]._meta.app_label
-        model_name = context["model"]._meta.model_name
-        return reverse(
-            f"wagtailsnippets_{app_label}_{model_name}:delete",
-            args=[quote(context["instance"].pk)],
-        )
+        instance = context["instance"]
+        url_name = instance.snippet_viewset.get_url_name("delete")
+        return reverse(url_name, args=[quote(instance.pk)])
 
 
 class SaveMenuItem(ActionMenuItem):
     name = "action-save"
     label = _("Save")
-    icon_name = "download-alt"
+    icon_name = "download"
     template_name = "wagtailsnippets/snippets/action_menu/save.html"
 
 

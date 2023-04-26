@@ -1,4 +1,4 @@
-import axe, { AxeResults } from 'axe-core';
+import axe, { AxeResults, NodeResult } from 'axe-core';
 
 import { dialog } from './dialog';
 
@@ -10,6 +10,25 @@ More background can be found in webpack.config.js
 This component implements a roving tab index for keyboard navigation
 Learn more about roving tabIndex: https://w3c.github.io/aria-practices/#kbd_roving_tabindex
 */
+
+const sortAxeNodes = (nodeResultA?: NodeResult, nodeResultB?: NodeResult) => {
+  if (!nodeResultA || !nodeResultB) return 0;
+  const nodeA = document.querySelector<HTMLElement>(nodeResultA.target[0]);
+  const nodeB = document.querySelector<HTMLElement>(nodeResultB.target[0]);
+  if (!nodeA || !nodeB) return 0;
+  // Method works with bitwise https://developer.mozilla.org/en-US/docs/Web/API/Node/compareDocumentPosition
+  // eslint-disable-next-line no-bitwise
+  return nodeA.compareDocumentPosition(nodeB) & Node.DOCUMENT_POSITION_PRECEDING
+    ? 1
+    : -1;
+};
+
+export const sortAxeViolations = (violations: AxeResults['violations']) =>
+  violations.sort((violationA, violationB) => {
+    const earliestNodeA = violationA.nodes.sort(sortAxeNodes)[0];
+    const earliestNodeB = violationB.nodes.sort(sortAxeNodes)[0];
+    return sortAxeNodes(earliestNodeA, earliestNodeB);
+  });
 
 export class Userbar extends HTMLElement {
   declare trigger: HTMLElement;
@@ -365,8 +384,17 @@ export class Userbar extends HTMLElement {
       this.shadowRoot.querySelector<HTMLTemplateElement>(
         '#w-a11y-result-selector-template',
       );
+    const a11yOutlineTemplate =
+      this.shadowRoot.querySelector<HTMLTemplateElement>(
+        '#w-a11y-result-outline-template',
+      );
 
-    if (!accessibilityResultsBox || !a11yRowTemplate || !a11ySelectorTemplate) {
+    if (
+      !accessibilityResultsBox ||
+      !a11yRowTemplate ||
+      !a11ySelectorTemplate ||
+      !a11yOutlineTemplate
+    ) {
       return;
     }
 
@@ -389,7 +417,8 @@ export class Userbar extends HTMLElement {
       modalBody.innerHTML = '';
 
       if (results.violations.length) {
-        results.violations.forEach((violation, violationIndex) => {
+        const sortedViolations = sortAxeViolations(results.violations);
+        sortedViolations.forEach((violation, violationIndex) => {
           modalBody.appendChild(a11yRowTemplate.content.cloneNode(true));
           const currentA11yRow = modalBody.querySelectorAll(
             '[data-a11y-result-row]',
@@ -435,12 +464,65 @@ export class Userbar extends HTMLElement {
             currentA11ySelector.addEventListener('click', () => {
               const inaccessibleElement =
                 document.querySelector<HTMLElement>(selectorName);
-              if (!inaccessibleElement) return;
+              const a11yOutlineContainer =
+                this.shadowRoot?.querySelector<HTMLElement>(
+                  '[data-a11y-result-outline-container]',
+                );
+              if (a11yOutlineContainer?.firstElementChild) {
+                a11yOutlineContainer.removeChild(
+                  a11yOutlineContainer.firstElementChild,
+                );
+              }
+              a11yOutlineContainer?.appendChild(
+                a11yOutlineTemplate.content.cloneNode(true),
+              );
+              const currentA11yOutline =
+                this.shadowRoot?.querySelector<HTMLElement>(
+                  '[data-a11y-result-outline]',
+                );
+              if (
+                !this.shadowRoot ||
+                !inaccessibleElement ||
+                !currentA11yOutline ||
+                !a11yOutlineContainer
+              )
+                return;
+
+              const styleA11yOutline = () => {
+                const rect = inaccessibleElement.getBoundingClientRect();
+                currentA11yOutline.style.cssText = `
+                top: ${
+                  rect.height < 5
+                    ? `${rect.top + window.scrollY - 2.5}px`
+                    : `${rect.top + window.scrollY}px`
+                };
+                left: ${
+                  rect.width < 5
+                    ? `${rect.left + window.scrollX - 2.5}px`
+                    : `${rect.left + window.scrollX}px`
+                };
+                width: ${Math.max(rect.width, 5)}px;
+                height: ${Math.max(rect.height, 5)}px;
+                position: absolute;
+                z-index: 129;
+                outline: 1px solid #CD4444;
+                box-shadow: 0px 0px 12px 1px #FF0000;
+                `;
+              };
+
+              styleA11yOutline();
+
+              window.addEventListener('resize', styleA11yOutline);
+
               inaccessibleElement.style.scrollMargin = '6.25rem';
-              inaccessibleElement.scrollIntoView({
-                behavior: 'smooth',
-              });
+              inaccessibleElement.scrollIntoView();
               inaccessibleElement.focus();
+
+              accessibilityResultsBox.addEventListener('hide', () => {
+                currentA11yOutline.style.cssText = '';
+
+                window.removeEventListener('resize', styleA11yOutline);
+              });
             });
           });
         });

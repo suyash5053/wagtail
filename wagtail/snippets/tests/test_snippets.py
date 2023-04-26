@@ -13,7 +13,7 @@ from django.core.files.base import ContentFile
 from django.core.files.uploadedfile import SimpleUploadedFile
 from django.core.handlers.wsgi import WSGIRequest
 from django.http import HttpRequest, HttpResponse
-from django.test import RequestFactory, TestCase
+from django.test import RequestFactory, TestCase, TransactionTestCase
 from django.test.utils import override_settings
 from django.urls import reverse
 from django.utils.timezone import make_aware, now
@@ -25,7 +25,7 @@ from wagtail.admin.admin_url_finder import AdminURLFinder
 from wagtail.admin.forms import WagtailAdminModelForm
 from wagtail.admin.panels import FieldPanel, ObjectList, get_edit_handler
 from wagtail.blocks.field_block import FieldBlockAdapter
-from wagtail.models import Locale, ModelLogEntry, Page, ReferenceIndex, Revision
+from wagtail.models import Locale, ModelLogEntry, Revision
 from wagtail.signals import published, unpublished
 from wagtail.snippets.action_menu import (
     ActionMenuItem,
@@ -43,7 +43,6 @@ from wagtail.test.snippets.models import (
     AlphaSnippet,
     FancySnippet,
     FileUploadSnippet,
-    FilterableSnippet,
     RegisterDecorator,
     RegisterFunction,
     SearchableSnippet,
@@ -59,12 +58,12 @@ from wagtail.test.testapp.models import (
     AdvertWithTabbedInterface,
     DraftStateCustomPrimaryKeyModel,
     DraftStateModel,
-    GenericSnippetPage,
     MultiPreviewModesModel,
     RevisableChildModel,
     RevisableModel,
     SnippetChooserModel,
     SnippetChooserModelWithCustomPrimaryKey,
+    VariousOnDeleteModel,
 )
 from wagtail.test.utils import WagtailTestUtils
 from wagtail.test.utils.timestamps import rendered_timestamp, submittable_timestamp
@@ -110,7 +109,8 @@ class TestSnippetListView(WagtailTestUtils, TestCase):
     def test_simple(self):
         response = self.get()
         self.assertEqual(response.status_code, 200)
-        self.assertTemplateUsed(response, "wagtailsnippets/snippets/type_index.html")
+        self.assertTemplateUsed(response, "wagtailsnippets/snippets/index.html")
+        self.assertEqual(response.context["header_icon"], "snippet")
 
     def get_with_limited_permissions(self):
         self.user.is_superuser = False
@@ -140,9 +140,7 @@ class TestSnippetListView(WagtailTestUtils, TestCase):
         for page in pages:
             response = self.get({"p": page})
             self.assertEqual(response.status_code, 200)
-            self.assertTemplateUsed(
-                response, "wagtailsnippets/snippets/type_index.html"
-            )
+            self.assertTemplateUsed(response, "wagtailsnippets/snippets/index.html")
 
     def test_displays_add_button(self):
         self.assertContains(self.get(), "Add advert")
@@ -306,7 +304,7 @@ class TestModelOrdering(WagtailTestUtils, TestCase):
             reverse("wagtailsnippetchoosers_tests_advertwithtabbedinterface:choose")
         )
         self.assertEqual(response.status_code, 200)
-        self.assertEqual(response.context["items"][0].text, "aaaadvert")
+        self.assertEqual(response.context["results"][0].text, "aaaadvert")
 
 
 class TestListViewOrdering(WagtailTestUtils, TestCase):
@@ -451,7 +449,7 @@ class TestListViewOrdering(WagtailTestUtils, TestCase):
         self.assertContains(response, list_url + "?ordering=live")
 
 
-class TestSnippetListViewWithSearchableSnippet(WagtailTestUtils, TestCase):
+class TestSnippetListViewWithSearchableSnippet(WagtailTestUtils, TransactionTestCase):
     def setUp(self):
         self.login()
 
@@ -469,7 +467,7 @@ class TestSnippetListViewWithSearchableSnippet(WagtailTestUtils, TestCase):
     def test_simple(self):
         response = self.get()
         self.assertEqual(response.status_code, 200)
-        self.assertTemplateUsed(response, "wagtailsnippets/snippets/type_index.html")
+        self.assertTemplateUsed(response, "wagtailsnippets/snippets/index.html")
 
         # All snippets should be in items
         items = list(response.context["page_obj"].object_list)
@@ -483,7 +481,7 @@ class TestSnippetListViewWithSearchableSnippet(WagtailTestUtils, TestCase):
     def test_empty_q(self):
         response = self.get({"q": ""})
         self.assertEqual(response.status_code, 200)
-        self.assertTemplateUsed(response, "wagtailsnippets/snippets/type_index.html")
+        self.assertTemplateUsed(response, "wagtailsnippets/snippets/index.html")
 
         # All snippets should be in items
         items = list(response.context["page_obj"].object_list)
@@ -516,159 +514,18 @@ class TestSnippetListViewWithSearchableSnippet(WagtailTestUtils, TestCase):
         self.assertIn(self.snippet_c, items)
 
 
-class TestSnippetListViewWithFilterSet(WagtailTestUtils, TestCase):
-    def setUp(self):
-        self.login()
-
-    def get(self, params={}):
-        return self.client.get(
-            reverse("wagtailsnippets_snippetstests_filterablesnippet:list"),
-            params,
-        )
-
-    def create_test_snippets(self):
-        FilterableSnippet.objects.create(text="From Indonesia", country_code="ID")
-        FilterableSnippet.objects.create(text="From the UK", country_code="UK")
-
-    def test_unfiltered_no_results(self):
-        response = self.get()
-        add_url = reverse("wagtailsnippets_snippetstests_filterablesnippet:add")
-        self.assertContains(
-            response,
-            f'No filterable snippets have been created. Why not <a href="{add_url}">add one</a>',
-        )
-        self.assertContains(
-            response,
-            '<button class="button button-select__option button-select__option--selected" value="">All</button>',
-            html=True,
-        )
-        self.assertTemplateUsed(response, "wagtailadmin/shared/filters.html")
-
-    def test_unfiltered_with_results(self):
-        self.create_test_snippets()
-        response = self.get()
-        self.assertTemplateUsed(response, "wagtailadmin/shared/filters.html")
-        self.assertContains(response, "From Indonesia")
-        self.assertContains(response, "From the UK")
-        self.assertNotContains(response, "There are 2 matches")
-        self.assertContains(
-            response,
-            '<button class="button button-select__option button-select__option--selected" value="">All</button>',
-            html=True,
-        )
-
-    def test_empty_filter_with_results(self):
-        self.create_test_snippets()
-        response = self.get({"country_code": ""})
-        self.assertTemplateUsed(response, "wagtailadmin/shared/filters.html")
-        self.assertContains(response, "From Indonesia")
-        self.assertContains(response, "From the UK")
-        self.assertNotContains(response, "There are 2 matches")
-        self.assertContains(
-            response,
-            '<button class="button button-select__option button-select__option--selected" value="">All</button>',
-            html=True,
-        )
-
-    def test_filtered_no_results(self):
-        self.create_test_snippets()
-        response = self.get({"country_code": "PH"})
-        self.assertTemplateUsed(response, "wagtailadmin/shared/filters.html")
-        self.assertContains(response, "Sorry, no filterable snippets match your query")
-        self.assertContains(
-            response,
-            '<button class="button button-select__option button-select__option--selected" value="PH">Philippines</button>',
-            html=True,
-        )
-
-    def test_filtered_with_results(self):
-        self.create_test_snippets()
-        response = self.get({"country_code": "ID"})
-        self.assertTemplateUsed(response, "wagtailadmin/shared/filters.html")
-        self.assertContains(response, "From Indonesia")
-        self.assertContains(response, "There is 1 match")
-        self.assertContains(
-            response,
-            '<button class="button button-select__option button-select__option--selected" value="ID">Indonesia</button>',
-            html=True,
-        )
-
-    def test_filtered_searched_no_results(self):
-        self.create_test_snippets()
-        response = self.get({"country_code": "ID", "q": "the"})
-        self.assertTemplateUsed(response, "wagtailadmin/shared/filters.html")
-        self.assertContains(response, "Sorry, no filterable snippets match your query")
-        self.assertContains(
-            response,
-            '<button class="button button-select__option button-select__option--selected" value="ID">Indonesia</button>',
-            html=True,
-        )
-
-    def test_filtered_searched_with_results(self):
-        self.create_test_snippets()
-        response = self.get({"country_code": "UK", "q": "the"})
-        self.assertTemplateUsed(response, "wagtailadmin/shared/filters.html")
-        self.assertContains(response, "From the UK")
-        self.assertContains(response, "There is 1 match")
-        self.assertContains(
-            response,
-            '<button class="button button-select__option button-select__option--selected" value="UK">United Kingdom</button>',
-            html=True,
-        )
-
-
-class TestListViewWithCustomColumns(WagtailTestUtils, TestCase):
-    def setUp(self):
-        self.login()
-
-    @classmethod
-    def setUpTestData(cls):
-        FilterableSnippet.objects.create(text="From Indonesia", country_code="ID")
-        FilterableSnippet.objects.create(text="From the UK", country_code="UK")
-
-    def get(self, params={}):
-        return self.client.get(
-            reverse("wagtailsnippets_snippetstests_filterablesnippet:list"),
-            params,
-        )
-
-    def test_custom_columns(self):
-        response = self.get()
-        self.assertContains(response, "Text")
-        self.assertContains(response, "Country Code")
-        self.assertContains(response, "Custom Foo Column")
-        self.assertContains(response, "Updated")
-
-        self.assertContains(response, "Foo UK")
-
-        list_url = reverse("wagtailsnippets_snippetstests_filterablesnippet:list")
-        sort_country_code_url = list_url + "?ordering=country_code"
-
-        # One from the country code column, another from the custom foo column
-        self.assertContains(response, sort_country_code_url, count=2)
-
-        html = response.content.decode()
-
-        # The bulk actions column plus 4 columns defined in FilterableSnippetViewSet
-        self.assertTagInHTML("<th>", html, count=5, allow_extra_attrs=True)
-
-
 class TestSnippetCreateView(WagtailTestUtils, TestCase):
     def setUp(self):
         self.user = self.login()
 
     def get(self, params={}, model=Advert):
-        app_label = model._meta.app_label
-        model_name = model._meta.model_name
         return self.client.get(
-            reverse(f"wagtailsnippets_{app_label}_{model_name}:add"), params
+            reverse(model.snippet_viewset.get_url_name("add")), params
         )
 
     def post(self, post_data={}, model=Advert):
-        app_label = model._meta.app_label
-        model_name = model._meta.model_name
         return self.client.post(
-            reverse(f"wagtailsnippets_{app_label}_{model_name}:add"), post_data
+            reverse(model.snippet_viewset.get_url_name("add")), post_data
         )
 
     def test_get_with_limited_permissions(self):
@@ -845,7 +702,7 @@ class TestSnippetCreateView(WagtailTestUtils, TestCase):
         class TestSnippetActionMenuItem(ActionMenuItem):
             label = "Test"
             name = "test"
-            icon_name = "undo"
+            icon_name = "check"
             classname = "action-secondary"
 
             def is_shown(self, context):
@@ -863,7 +720,7 @@ class TestSnippetCreateView(WagtailTestUtils, TestCase):
 
         self.assertContains(
             response,
-            '<button type="submit" name="test" value="Test" class="button action-secondary"><svg class="icon icon-undo icon" aria-hidden="true"><use href="#icon-undo"></use></svg>Test</button>',
+            '<button type="submit" name="test" value="Test" class="button action-secondary"><svg class="icon icon-check icon" aria-hidden="true"><use href="#icon-check"></use></svg>Test</button>',
             html=True,
         )
 
@@ -883,7 +740,7 @@ class TestSnippetCreateView(WagtailTestUtils, TestCase):
         class TestSnippetActionMenuItem(ActionMenuItem):
             label = "Test"
             name = "test"
-            icon_name = "undo"
+            icon_name = "check"
             classname = "action-secondary"
 
             def is_shown(self, context):
@@ -903,7 +760,7 @@ class TestSnippetCreateView(WagtailTestUtils, TestCase):
 
         self.assertContains(
             response,
-            '<button type="submit" name="test" value="Test" class="button action-secondary"><svg class="icon icon-undo icon" aria-hidden="true"><use href="#icon-undo"></use></svg>Test</button>',
+            '<button type="submit" name="test" value="Test" class="button action-secondary"><svg class="icon icon-check icon" aria-hidden="true"><use href="#icon-check"></use></svg>Test</button>',
             html=True,
         )
         self.assertNotContains(response, "<em>'Save'</em>")
@@ -1007,46 +864,49 @@ class TestCreateDraftStateSnippet(WagtailTestUtils, TestCase):
         mock_handler = mock.MagicMock()
         published.connect(mock_handler)
 
-        timestamp = now()
-        with freeze_time(timestamp):
-            response = self.post(
-                post_data={
-                    "text": "Draft-enabled Foo, Published",
-                    "action-publish": "action-publish",
-                }
+        try:
+            timestamp = now()
+            with freeze_time(timestamp):
+                response = self.post(
+                    post_data={
+                        "text": "Draft-enabled Foo, Published",
+                        "action-publish": "action-publish",
+                    }
+                )
+            snippet = DraftStateModel.objects.get(text="Draft-enabled Foo, Published")
+
+            self.assertRedirects(
+                response, reverse("wagtailsnippets_tests_draftstatemodel:list")
             )
-        snippet = DraftStateModel.objects.get(text="Draft-enabled Foo, Published")
 
-        self.assertRedirects(
-            response, reverse("wagtailsnippets_tests_draftstatemodel:list")
-        )
+            # The instance should be created
+            self.assertEqual(snippet.text, "Draft-enabled Foo, Published")
 
-        # The instance should be created
-        self.assertEqual(snippet.text, "Draft-enabled Foo, Published")
+            # The instance should be live
+            self.assertTrue(snippet.live)
+            self.assertFalse(snippet.has_unpublished_changes)
+            self.assertEqual(snippet.first_published_at, timestamp)
+            self.assertEqual(snippet.last_published_at, timestamp)
 
-        # The instance should be live
-        self.assertTrue(snippet.live)
-        self.assertFalse(snippet.has_unpublished_changes)
-        self.assertEqual(snippet.first_published_at, timestamp)
-        self.assertEqual(snippet.last_published_at, timestamp)
+            # A revision should be created and set as both latest_revision and live_revision
+            self.assertIsNotNone(snippet.live_revision)
+            self.assertEqual(snippet.live_revision, snippet.latest_revision)
 
-        # A revision should be created and set as both latest_revision and live_revision
-        self.assertIsNotNone(snippet.live_revision)
-        self.assertEqual(snippet.live_revision, snippet.latest_revision)
+            # The revision content should contain the new data
+            self.assertEqual(
+                snippet.live_revision.content["text"],
+                "Draft-enabled Foo, Published",
+            )
 
-        # The revision content should contain the new data
-        self.assertEqual(
-            snippet.live_revision.content["text"],
-            "Draft-enabled Foo, Published",
-        )
+            # Check that the published signal was fired
+            self.assertEqual(mock_handler.call_count, 1)
+            mock_call = mock_handler.mock_calls[0][2]
 
-        # Check that the published signal was fired
-        self.assertEqual(mock_handler.call_count, 1)
-        mock_call = mock_handler.mock_calls[0][2]
-
-        self.assertEqual(mock_call["sender"], DraftStateModel)
-        self.assertEqual(mock_call["instance"], snippet)
-        self.assertIsInstance(mock_call["instance"], DraftStateModel)
+            self.assertEqual(mock_call["sender"], DraftStateModel)
+            self.assertEqual(mock_call["instance"], snippet)
+            self.assertIsInstance(mock_call["instance"], DraftStateModel)
+        finally:
+            published.disconnect(mock_handler)
 
     def test_publish_bad_permissions(self):
         # Only add create and edit permission
@@ -1074,42 +934,45 @@ class TestCreateDraftStateSnippet(WagtailTestUtils, TestCase):
         mock_handler = mock.MagicMock()
         published.connect(mock_handler)
 
-        response = self.post(
-            post_data={
-                "text": "Draft-enabled Foo",
-                "action-publish": "action-publish",
-            }
-        )
-        snippet = DraftStateModel.objects.get(text="Draft-enabled Foo")
+        try:
+            response = self.post(
+                post_data={
+                    "text": "Draft-enabled Foo",
+                    "action-publish": "action-publish",
+                }
+            )
+            snippet = DraftStateModel.objects.get(text="Draft-enabled Foo")
 
-        # Should be taken to the edit page
-        self.assertRedirects(
-            response,
-            reverse(
-                "wagtailsnippets_tests_draftstatemodel:edit",
-                args=[snippet.pk],
-            ),
-        )
+            # Should be taken to the edit page
+            self.assertRedirects(
+                response,
+                reverse(
+                    "wagtailsnippets_tests_draftstatemodel:edit",
+                    args=[snippet.pk],
+                ),
+            )
 
-        # The instance should still be created
-        self.assertEqual(snippet.text, "Draft-enabled Foo")
+            # The instance should still be created
+            self.assertEqual(snippet.text, "Draft-enabled Foo")
 
-        # The instance should not be live
-        self.assertFalse(snippet.live)
-        self.assertTrue(snippet.has_unpublished_changes)
+            # The instance should not be live
+            self.assertFalse(snippet.live)
+            self.assertTrue(snippet.has_unpublished_changes)
 
-        # A revision should be created and set as latest_revision, but not live_revision
-        self.assertIsNotNone(snippet.latest_revision)
-        self.assertIsNone(snippet.live_revision)
+            # A revision should be created and set as latest_revision, but not live_revision
+            self.assertIsNotNone(snippet.latest_revision)
+            self.assertIsNone(snippet.live_revision)
 
-        # The revision content should contain the data
-        self.assertEqual(
-            snippet.latest_revision.content["text"],
-            "Draft-enabled Foo",
-        )
+            # The revision content should contain the data
+            self.assertEqual(
+                snippet.latest_revision.content["text"],
+                "Draft-enabled Foo",
+            )
 
-        # Check that the published signal was not fired
-        self.assertEqual(mock_handler.call_count, 0)
+            # Check that the published signal was not fired
+            self.assertEqual(mock_handler.call_count, 0)
+        finally:
+            published.disconnect(mock_handler)
 
     def test_publish_with_publish_permission(self):
         # Use create and publish permissions instead of relying on superuser flag
@@ -1137,46 +1000,49 @@ class TestCreateDraftStateSnippet(WagtailTestUtils, TestCase):
         mock_handler = mock.MagicMock()
         published.connect(mock_handler)
 
-        timestamp = now()
-        with freeze_time(timestamp):
-            response = self.post(
-                post_data={
-                    "text": "Draft-enabled Foo, Published",
-                    "action-publish": "action-publish",
-                }
+        try:
+            timestamp = now()
+            with freeze_time(timestamp):
+                response = self.post(
+                    post_data={
+                        "text": "Draft-enabled Foo, Published",
+                        "action-publish": "action-publish",
+                    }
+                )
+            snippet = DraftStateModel.objects.get(text="Draft-enabled Foo, Published")
+
+            self.assertRedirects(
+                response, reverse("wagtailsnippets_tests_draftstatemodel:list")
             )
-        snippet = DraftStateModel.objects.get(text="Draft-enabled Foo, Published")
 
-        self.assertRedirects(
-            response, reverse("wagtailsnippets_tests_draftstatemodel:list")
-        )
+            # The instance should be created
+            self.assertEqual(snippet.text, "Draft-enabled Foo, Published")
 
-        # The instance should be created
-        self.assertEqual(snippet.text, "Draft-enabled Foo, Published")
+            # The instance should be live
+            self.assertTrue(snippet.live)
+            self.assertFalse(snippet.has_unpublished_changes)
+            self.assertEqual(snippet.first_published_at, timestamp)
+            self.assertEqual(snippet.last_published_at, timestamp)
 
-        # The instance should be live
-        self.assertTrue(snippet.live)
-        self.assertFalse(snippet.has_unpublished_changes)
-        self.assertEqual(snippet.first_published_at, timestamp)
-        self.assertEqual(snippet.last_published_at, timestamp)
+            # A revision should be created and set as both latest_revision and live_revision
+            self.assertIsNotNone(snippet.live_revision)
+            self.assertEqual(snippet.live_revision, snippet.latest_revision)
 
-        # A revision should be created and set as both latest_revision and live_revision
-        self.assertIsNotNone(snippet.live_revision)
-        self.assertEqual(snippet.live_revision, snippet.latest_revision)
+            # The revision content should contain the new data
+            self.assertEqual(
+                snippet.live_revision.content["text"],
+                "Draft-enabled Foo, Published",
+            )
 
-        # The revision content should contain the new data
-        self.assertEqual(
-            snippet.live_revision.content["text"],
-            "Draft-enabled Foo, Published",
-        )
+            # Check that the published signal was fired
+            self.assertEqual(mock_handler.call_count, 1)
+            mock_call = mock_handler.mock_calls[0][2]
 
-        # Check that the published signal was fired
-        self.assertEqual(mock_handler.call_count, 1)
-        mock_call = mock_handler.mock_calls[0][2]
-
-        self.assertEqual(mock_call["sender"], DraftStateModel)
-        self.assertEqual(mock_call["instance"], snippet)
-        self.assertIsInstance(mock_call["instance"], DraftStateModel)
+            self.assertEqual(mock_call["sender"], DraftStateModel)
+            self.assertEqual(mock_call["instance"], snippet)
+            self.assertIsInstance(mock_call["instance"], DraftStateModel)
+        finally:
+            published.disconnect(mock_handler)
 
     def test_create_scheduled(self):
         go_live_at = now() + datetime.timedelta(days=1)
@@ -1288,10 +1154,8 @@ class TestCreateDraftStateSnippet(WagtailTestUtils, TestCase):
 class BaseTestSnippetEditView(WagtailTestUtils, TestCase):
     def get_edit_url(self):
         snippet = self.test_snippet
-        app_label = snippet._meta.app_label
-        model_name = snippet._meta.model_name
         args = [quote(snippet.pk)]
-        return reverse(f"wagtailsnippets_{app_label}_{model_name}:edit", args=args)
+        return reverse(snippet.snippet_viewset.get_url_name("edit"), args=args)
 
     def get(self, params={}):
         return self.client.get(self.get_edit_url(), params)
@@ -1483,7 +1347,7 @@ class TestSnippetEditView(BaseTestSnippetEditView):
         class TestSnippetActionMenuItem(ActionMenuItem):
             label = "Test"
             name = "test"
-            icon_name = "undo"
+            icon_name = "check"
             classname = "action-secondary"
 
             def is_shown(self, context):
@@ -1501,7 +1365,7 @@ class TestSnippetEditView(BaseTestSnippetEditView):
 
         self.assertContains(
             response,
-            '<button type="submit" name="test" value="Test" class="button action-secondary"><svg class="icon icon-undo icon" aria-hidden="true"><use href="#icon-undo"></use></svg>Test</button>',
+            '<button type="submit" name="test" value="Test" class="button action-secondary"><svg class="icon icon-check icon" aria-hidden="true"><use href="#icon-check"></use></svg>Test</button>',
             html=True,
         )
 
@@ -1708,64 +1572,69 @@ class TestEditDraftStateSnippet(BaseTestSnippetEditView):
         mock_handler = mock.MagicMock()
         published.connect(mock_handler)
 
-        timestamp = now()
-        with freeze_time(timestamp):
-            response = self.post(
-                post_data={
-                    "text": "Draft-enabled Bar, Published",
-                    "action-publish": "action-publish",
-                }
+        try:
+            timestamp = now()
+            with freeze_time(timestamp):
+                response = self.post(
+                    post_data={
+                        "text": "Draft-enabled Bar, Published",
+                        "action-publish": "action-publish",
+                    }
+                )
+
+            self.test_snippet.refresh_from_db()
+            revisions = Revision.objects.for_instance(self.test_snippet)
+            latest_revision = self.test_snippet.latest_revision
+
+            log_entries = ModelLogEntry.objects.filter(
+                content_type=ContentType.objects.get_for_model(
+                    DraftStateCustomPrimaryKeyModel
+                ),
+                action="wagtail.publish",
+                object_id=self.test_snippet.pk,
+            )
+            log_entry = log_entries.first()
+
+            self.assertRedirects(
+                response,
+                reverse("wagtailsnippets_tests_draftstatecustomprimarykeymodel:list"),
             )
 
-        self.test_snippet.refresh_from_db()
-        revisions = Revision.objects.for_instance(self.test_snippet)
-        latest_revision = self.test_snippet.latest_revision
+            # The instance should be updated
+            self.assertEqual(self.test_snippet.text, "Draft-enabled Bar, Published")
 
-        log_entries = ModelLogEntry.objects.filter(
-            content_type=ContentType.objects.get_for_model(
-                DraftStateCustomPrimaryKeyModel
-            ),
-            action="wagtail.publish",
-            object_id=self.test_snippet.pk,
-        )
-        log_entry = log_entries.first()
+            # The instance should be live
+            self.assertTrue(self.test_snippet.live)
+            self.assertFalse(self.test_snippet.has_unpublished_changes)
+            self.assertEqual(self.test_snippet.first_published_at, timestamp)
+            self.assertEqual(self.test_snippet.last_published_at, timestamp)
+            self.assertEqual(self.test_snippet.live_revision, latest_revision)
 
-        self.assertRedirects(
-            response,
-            reverse("wagtailsnippets_tests_draftstatecustomprimarykeymodel:list"),
-        )
+            # The revision should be created and set as latest_revision
+            self.assertEqual(revisions.count(), 1)
+            self.assertEqual(latest_revision, revisions.first())
 
-        # The instance should be updated
-        self.assertEqual(self.test_snippet.text, "Draft-enabled Bar, Published")
+            # The revision content should contain the new data
+            self.assertEqual(
+                latest_revision.content["text"],
+                "Draft-enabled Bar, Published",
+            )
 
-        # The instance should be live
-        self.assertTrue(self.test_snippet.live)
-        self.assertFalse(self.test_snippet.has_unpublished_changes)
-        self.assertEqual(self.test_snippet.first_published_at, timestamp)
-        self.assertEqual(self.test_snippet.last_published_at, timestamp)
-        self.assertEqual(self.test_snippet.live_revision, latest_revision)
+            # A log entry with wagtail.publish action should be created
+            self.assertEqual(log_entries.count(), 1)
+            self.assertEqual(log_entry.timestamp, timestamp)
 
-        # The revision should be created and set as latest_revision
-        self.assertEqual(revisions.count(), 1)
-        self.assertEqual(latest_revision, revisions.first())
+            # Check that the published signal was fired
+            self.assertEqual(mock_handler.call_count, 1)
+            mock_call = mock_handler.mock_calls[0][2]
 
-        # The revision content should contain the new data
-        self.assertEqual(
-            latest_revision.content["text"],
-            "Draft-enabled Bar, Published",
-        )
-
-        # A log entry with wagtail.publish action should be created
-        self.assertEqual(log_entries.count(), 1)
-        self.assertEqual(log_entry.timestamp, timestamp)
-
-        # Check that the published signal was fired
-        self.assertEqual(mock_handler.call_count, 1)
-        mock_call = mock_handler.mock_calls[0][2]
-
-        self.assertEqual(mock_call["sender"], DraftStateCustomPrimaryKeyModel)
-        self.assertEqual(mock_call["instance"], self.test_snippet)
-        self.assertIsInstance(mock_call["instance"], DraftStateCustomPrimaryKeyModel)
+            self.assertEqual(mock_call["sender"], DraftStateCustomPrimaryKeyModel)
+            self.assertEqual(mock_call["instance"], self.test_snippet)
+            self.assertIsInstance(
+                mock_call["instance"], DraftStateCustomPrimaryKeyModel
+            )
+        finally:
+            published.disconnect(mock_handler)
 
     def test_publish_bad_permissions(self):
         # Only add edit permission
@@ -1785,36 +1654,39 @@ class TestEditDraftStateSnippet(BaseTestSnippetEditView):
         mock_handler = mock.MagicMock()
         published.connect(mock_handler)
 
-        response = self.post(
-            post_data={
-                "text": "Edited draft Foo",
-                "action-publish": "action-publish",
-            }
-        )
-        self.test_snippet.refresh_from_db()
+        try:
+            response = self.post(
+                post_data={
+                    "text": "Edited draft Foo",
+                    "action-publish": "action-publish",
+                }
+            )
+            self.test_snippet.refresh_from_db()
 
-        # Should remain on the edit page
-        self.assertRedirects(response, self.get_edit_url())
+            # Should remain on the edit page
+            self.assertRedirects(response, self.get_edit_url())
 
-        # The instance should not be edited
-        self.assertEqual(self.test_snippet.text, "Draft-enabled Foo")
+            # The instance should not be edited
+            self.assertEqual(self.test_snippet.text, "Draft-enabled Foo")
 
-        # The instance should not be live
-        self.assertFalse(self.test_snippet.live)
-        self.assertTrue(self.test_snippet.has_unpublished_changes)
+            # The instance should not be live
+            self.assertFalse(self.test_snippet.live)
+            self.assertTrue(self.test_snippet.has_unpublished_changes)
 
-        # A revision should be created and set as latest_revision, but not live_revision
-        self.assertIsNotNone(self.test_snippet.latest_revision)
-        self.assertIsNone(self.test_snippet.live_revision)
+            # A revision should be created and set as latest_revision, but not live_revision
+            self.assertIsNotNone(self.test_snippet.latest_revision)
+            self.assertIsNone(self.test_snippet.live_revision)
 
-        # The revision content should contain the data
-        self.assertEqual(
-            self.test_snippet.latest_revision.content["text"],
-            "Edited draft Foo",
-        )
+            # The revision content should contain the data
+            self.assertEqual(
+                self.test_snippet.latest_revision.content["text"],
+                "Edited draft Foo",
+            )
 
-        # Check that the published signal was not fired
-        self.assertEqual(mock_handler.call_count, 0)
+            # Check that the published signal was not fired
+            self.assertEqual(mock_handler.call_count, 0)
+        finally:
+            published.disconnect(mock_handler)
 
     def test_publish_with_publish_permission(self):
         # Only add edit and publish permissions
@@ -1841,64 +1713,69 @@ class TestEditDraftStateSnippet(BaseTestSnippetEditView):
         mock_handler = mock.MagicMock()
         published.connect(mock_handler)
 
-        timestamp = now()
-        with freeze_time(timestamp):
-            response = self.post(
-                post_data={
-                    "text": "Draft-enabled Bar, Published",
-                    "action-publish": "action-publish",
-                }
+        try:
+            timestamp = now()
+            with freeze_time(timestamp):
+                response = self.post(
+                    post_data={
+                        "text": "Draft-enabled Bar, Published",
+                        "action-publish": "action-publish",
+                    }
+                )
+
+            self.test_snippet.refresh_from_db()
+            revisions = Revision.objects.for_instance(self.test_snippet)
+            latest_revision = self.test_snippet.latest_revision
+
+            log_entries = ModelLogEntry.objects.filter(
+                content_type=ContentType.objects.get_for_model(
+                    DraftStateCustomPrimaryKeyModel
+                ),
+                action="wagtail.publish",
+                object_id=self.test_snippet.pk,
+            )
+            log_entry = log_entries.first()
+
+            self.assertRedirects(
+                response,
+                reverse("wagtailsnippets_tests_draftstatecustomprimarykeymodel:list"),
             )
 
-        self.test_snippet.refresh_from_db()
-        revisions = Revision.objects.for_instance(self.test_snippet)
-        latest_revision = self.test_snippet.latest_revision
+            # The instance should be updated
+            self.assertEqual(self.test_snippet.text, "Draft-enabled Bar, Published")
 
-        log_entries = ModelLogEntry.objects.filter(
-            content_type=ContentType.objects.get_for_model(
-                DraftStateCustomPrimaryKeyModel
-            ),
-            action="wagtail.publish",
-            object_id=self.test_snippet.pk,
-        )
-        log_entry = log_entries.first()
+            # The instance should be live
+            self.assertTrue(self.test_snippet.live)
+            self.assertFalse(self.test_snippet.has_unpublished_changes)
+            self.assertEqual(self.test_snippet.first_published_at, timestamp)
+            self.assertEqual(self.test_snippet.last_published_at, timestamp)
+            self.assertEqual(self.test_snippet.live_revision, latest_revision)
 
-        self.assertRedirects(
-            response,
-            reverse("wagtailsnippets_tests_draftstatecustomprimarykeymodel:list"),
-        )
+            # The revision should be created and set as latest_revision
+            self.assertEqual(revisions.count(), 1)
+            self.assertEqual(latest_revision, revisions.first())
 
-        # The instance should be updated
-        self.assertEqual(self.test_snippet.text, "Draft-enabled Bar, Published")
+            # The revision content should contain the new data
+            self.assertEqual(
+                latest_revision.content["text"],
+                "Draft-enabled Bar, Published",
+            )
 
-        # The instance should be live
-        self.assertTrue(self.test_snippet.live)
-        self.assertFalse(self.test_snippet.has_unpublished_changes)
-        self.assertEqual(self.test_snippet.first_published_at, timestamp)
-        self.assertEqual(self.test_snippet.last_published_at, timestamp)
-        self.assertEqual(self.test_snippet.live_revision, latest_revision)
+            # A log entry with wagtail.publish action should be created
+            self.assertEqual(log_entries.count(), 1)
+            self.assertEqual(log_entry.timestamp, timestamp)
 
-        # The revision should be created and set as latest_revision
-        self.assertEqual(revisions.count(), 1)
-        self.assertEqual(latest_revision, revisions.first())
+            # Check that the published signal was fired
+            self.assertEqual(mock_handler.call_count, 1)
+            mock_call = mock_handler.mock_calls[0][2]
 
-        # The revision content should contain the new data
-        self.assertEqual(
-            latest_revision.content["text"],
-            "Draft-enabled Bar, Published",
-        )
-
-        # A log entry with wagtail.publish action should be created
-        self.assertEqual(log_entries.count(), 1)
-        self.assertEqual(log_entry.timestamp, timestamp)
-
-        # Check that the published signal was fired
-        self.assertEqual(mock_handler.call_count, 1)
-        mock_call = mock_handler.mock_calls[0][2]
-
-        self.assertEqual(mock_call["sender"], DraftStateCustomPrimaryKeyModel)
-        self.assertEqual(mock_call["instance"], self.test_snippet)
-        self.assertIsInstance(mock_call["instance"], DraftStateCustomPrimaryKeyModel)
+            self.assertEqual(mock_call["sender"], DraftStateCustomPrimaryKeyModel)
+            self.assertEqual(mock_call["instance"], self.test_snippet)
+            self.assertIsInstance(
+                mock_call["instance"], DraftStateCustomPrimaryKeyModel
+            )
+        finally:
+            published.disconnect(mock_handler)
 
     def test_save_draft_then_publish(self):
         save_timestamp = now()
@@ -3361,7 +3238,7 @@ class TestSnippetUnpublish(WagtailTestUtils, TestCase):
 
         # Check that the user received an unpublish confirm page
         self.assertEqual(response.status_code, 200)
-        self.assertTemplateUsed(response, "wagtailadmin/shared/confirm_unpublish.html")
+        self.assertTemplateUsed(response, "wagtailadmin/generic/confirm_unpublish.html")
 
     def test_unpublish_view_invalid_pk(self):
         """
@@ -3405,28 +3282,31 @@ class TestSnippetUnpublish(WagtailTestUtils, TestCase):
         mock_handler = mock.MagicMock()
         unpublished.connect(mock_handler)
 
-        # Remove privileges from user
-        self.user.is_superuser = False
-        self.user.user_permissions.add(
-            Permission.objects.get(
-                content_type__app_label="wagtailadmin", codename="access_admin"
+        try:
+            # Remove privileges from user
+            self.user.is_superuser = False
+            self.user.user_permissions.add(
+                Permission.objects.get(
+                    content_type__app_label="wagtailadmin", codename="access_admin"
+                )
             )
-        )
-        self.user.save()
+            self.user.save()
 
-        # Post to the unpublish view
-        response = self.client.post(self.unpublish_url)
+            # Post to the unpublish view
+            response = self.client.post(self.unpublish_url)
 
-        # Should be redirected to the home page
-        self.assertRedirects(response, reverse("wagtailadmin_home"))
+            # Should be redirected to the home page
+            self.assertRedirects(response, reverse("wagtailadmin_home"))
 
-        # Check that the object was not unpublished
-        self.assertTrue(
-            DraftStateCustomPrimaryKeyModel.objects.get(pk=self.snippet.pk).live
-        )
+            # Check that the object was not unpublished
+            self.assertTrue(
+                DraftStateCustomPrimaryKeyModel.objects.get(pk=self.snippet.pk).live
+            )
 
-        # Check that the unpublished signal was not fired
-        self.assertEqual(mock_handler.call_count, 0)
+            # Check that the unpublished signal was not fired
+            self.assertEqual(mock_handler.call_count, 0)
+        finally:
+            unpublished.disconnect(mock_handler)
 
     def test_unpublish_view_post_with_publish_permission(self):
         """
@@ -3437,47 +3317,52 @@ class TestSnippetUnpublish(WagtailTestUtils, TestCase):
         mock_handler = mock.MagicMock()
         unpublished.connect(mock_handler)
 
-        # Only add edit and publish permissions
-        self.user.is_superuser = False
-        edit_permission = Permission.objects.get(
-            content_type__app_label="tests",
-            codename="change_draftstatecustomprimarykeymodel",
-        )
-        publish_permission = Permission.objects.get(
-            content_type__app_label="tests",
-            codename="publish_draftstatecustomprimarykeymodel",
-        )
-        admin_permission = Permission.objects.get(
-            content_type__app_label="wagtailadmin", codename="access_admin"
-        )
-        self.user.user_permissions.add(
-            edit_permission,
-            publish_permission,
-            admin_permission,
-        )
-        self.user.save()
+        try:
+            # Only add edit and publish permissions
+            self.user.is_superuser = False
+            edit_permission = Permission.objects.get(
+                content_type__app_label="tests",
+                codename="change_draftstatecustomprimarykeymodel",
+            )
+            publish_permission = Permission.objects.get(
+                content_type__app_label="tests",
+                codename="publish_draftstatecustomprimarykeymodel",
+            )
+            admin_permission = Permission.objects.get(
+                content_type__app_label="wagtailadmin", codename="access_admin"
+            )
+            self.user.user_permissions.add(
+                edit_permission,
+                publish_permission,
+                admin_permission,
+            )
+            self.user.save()
 
-        # Post to the unpublish view
-        response = self.client.post(self.unpublish_url)
+            # Post to the unpublish view
+            response = self.client.post(self.unpublish_url)
 
-        # Should be redirected to the listing page
-        self.assertRedirects(
-            response,
-            reverse("wagtailsnippets_tests_draftstatecustomprimarykeymodel:list"),
-        )
+            # Should be redirected to the listing page
+            self.assertRedirects(
+                response,
+                reverse("wagtailsnippets_tests_draftstatecustomprimarykeymodel:list"),
+            )
 
-        # Check that the object was unpublished
-        self.assertFalse(
-            DraftStateCustomPrimaryKeyModel.objects.get(pk=self.snippet.pk).live
-        )
+            # Check that the object was unpublished
+            self.assertFalse(
+                DraftStateCustomPrimaryKeyModel.objects.get(pk=self.snippet.pk).live
+            )
 
-        # Check that the unpublished signal was fired
-        self.assertEqual(mock_handler.call_count, 1)
-        mock_call = mock_handler.mock_calls[0][2]
+            # Check that the unpublished signal was fired
+            self.assertEqual(mock_handler.call_count, 1)
+            mock_call = mock_handler.mock_calls[0][2]
 
-        self.assertEqual(mock_call["sender"], DraftStateCustomPrimaryKeyModel)
-        self.assertEqual(mock_call["instance"], self.snippet)
-        self.assertIsInstance(mock_call["instance"], DraftStateCustomPrimaryKeyModel)
+            self.assertEqual(mock_call["sender"], DraftStateCustomPrimaryKeyModel)
+            self.assertEqual(mock_call["instance"], self.snippet)
+            self.assertIsInstance(
+                mock_call["instance"], DraftStateCustomPrimaryKeyModel
+            )
+        finally:
+            unpublished.disconnect(mock_handler)
 
     def test_unpublish_view_post(self):
         """
@@ -3487,27 +3372,32 @@ class TestSnippetUnpublish(WagtailTestUtils, TestCase):
         mock_handler = mock.MagicMock()
         unpublished.connect(mock_handler)
 
-        # Post to the unpublish view
-        response = self.client.post(self.unpublish_url)
+        try:
+            # Post to the unpublish view
+            response = self.client.post(self.unpublish_url)
 
-        # Should be redirected to the listing page
-        self.assertRedirects(
-            response,
-            reverse("wagtailsnippets_tests_draftstatecustomprimarykeymodel:list"),
-        )
+            # Should be redirected to the listing page
+            self.assertRedirects(
+                response,
+                reverse("wagtailsnippets_tests_draftstatecustomprimarykeymodel:list"),
+            )
 
-        # Check that the object was unpublished
-        self.assertFalse(
-            DraftStateCustomPrimaryKeyModel.objects.get(pk=self.snippet.pk).live
-        )
+            # Check that the object was unpublished
+            self.assertFalse(
+                DraftStateCustomPrimaryKeyModel.objects.get(pk=self.snippet.pk).live
+            )
 
-        # Check that the unpublished signal was fired
-        self.assertEqual(mock_handler.call_count, 1)
-        mock_call = mock_handler.mock_calls[0][2]
+            # Check that the unpublished signal was fired
+            self.assertEqual(mock_handler.call_count, 1)
+            mock_call = mock_handler.mock_calls[0][2]
 
-        self.assertEqual(mock_call["sender"], DraftStateCustomPrimaryKeyModel)
-        self.assertEqual(mock_call["instance"], self.snippet)
-        self.assertIsInstance(mock_call["instance"], DraftStateCustomPrimaryKeyModel)
+            self.assertEqual(mock_call["sender"], DraftStateCustomPrimaryKeyModel)
+            self.assertEqual(mock_call["instance"], self.snippet)
+            self.assertIsInstance(
+                mock_call["instance"], DraftStateCustomPrimaryKeyModel
+            )
+        finally:
+            unpublished.disconnect(mock_handler)
 
     def test_after_unpublish_hook(self):
         def hook_func(request, snippet):
@@ -3570,23 +3460,51 @@ class TestSnippetDelete(WagtailTestUtils, TestCase):
         self.assertEqual(response.status_code, 302)
 
     def test_delete_get(self):
-        response = self.client.get(
-            reverse(
-                "wagtailsnippets_tests_advert:delete",
-                args=[quote(self.test_snippet.pk)],
-            )
+        delete_url = reverse(
+            "wagtailsnippets_tests_advert:delete",
+            args=[quote(self.test_snippet.pk)],
         )
+        response = self.client.get(delete_url)
         self.assertEqual(response.status_code, 200)
+        self.assertContains(response, "Yes, delete")
+        self.assertContains(response, delete_url)
 
     @override_settings(WAGTAIL_I18N_ENABLED=True)
     def test_delete_get_with_i18n_enabled(self):
-        response = self.client.get(
+        delete_url = reverse(
+            "wagtailsnippets_tests_advert:delete",
+            args=[quote(self.test_snippet.pk)],
+        )
+        response = self.client.get(delete_url)
+        self.assertEqual(response.status_code, 200)
+        self.assertContains(response, "Yes, delete")
+        self.assertContains(response, delete_url)
+
+    def test_delete_get_with_protected_reference(self):
+        VariousOnDeleteModel.objects.create(
+            text="Undeletable", on_delete_protect=self.test_snippet
+        )
+        delete_url = reverse(
+            "wagtailsnippets_tests_advert:delete",
+            args=[quote(self.test_snippet.pk)],
+        )
+        response = self.client.get(delete_url)
+        self.assertEqual(response.status_code, 200)
+        self.assertContains(response, "This advert is referenced 1 time.")
+        self.assertContains(
+            response,
+            "One or more references to this advert prevent it from being deleted.",
+        )
+        self.assertContains(
+            response,
             reverse(
-                "wagtailsnippets_tests_advert:delete",
+                "wagtailsnippets_tests_advert:usage",
                 args=[quote(self.test_snippet.pk)],
             )
+            + "?describe_on_delete=1",
         )
-        self.assertEqual(response.status_code, 200)
+        self.assertNotContains(response, "Yes, delete")
+        self.assertNotContains(response, delete_url)
 
     def test_delete_post_with_limited_permissions(self):
         self.user.is_superuser = False
@@ -3619,6 +3537,23 @@ class TestSnippetDelete(WagtailTestUtils, TestCase):
         # Check that the page is gone
         self.assertEqual(Advert.objects.filter(text="test_advert").count(), 0)
 
+    def test_delete_post_with_protected_reference(self):
+        VariousOnDeleteModel.objects.create(
+            text="Undeletable", on_delete_protect=self.test_snippet
+        )
+        delete_url = reverse(
+            "wagtailsnippets_tests_advert:delete",
+            args=[quote(self.test_snippet.pk)],
+        )
+        response = self.client.post(delete_url)
+
+        # Should throw a PermissionDenied error and redirect to the dashboard
+        self.assertEqual(response.status_code, 302)
+        self.assertRedirects(response, reverse("wagtailadmin_home"))
+
+        # Check that the snippet is still here
+        self.assertTrue(Advert.objects.filter(pk=self.test_snippet.pk).exists())
+
     def test_usage_link(self):
         output = StringIO()
         management.call_command("rebuild_references_index", stdout=output)
@@ -3630,11 +3565,16 @@ class TestSnippetDelete(WagtailTestUtils, TestCase):
             )
         )
         self.assertEqual(response.status_code, 200)
-        self.assertTemplateUsed(
-            response, "wagtailsnippets/snippets/confirm_delete.html"
+        self.assertTemplateUsed(response, "wagtailadmin/generic/confirm_delete.html")
+        self.assertContains(response, "This advert is referenced 2 times")
+        self.assertContains(
+            response,
+            reverse(
+                "wagtailsnippets_tests_advert:usage",
+                args=[quote(self.test_snippet.pk)],
+            )
+            + "?describe_on_delete=1",
         )
-        self.assertContains(response, "Used 2 times")
-        self.assertContains(response, self.test_snippet.usage_url())
 
     def test_before_delete_snippet_hook_get(self):
         advert = Advert.objects.create(
@@ -3706,68 +3646,6 @@ class TestSnippetDelete(WagtailTestUtils, TestCase):
         self.assertFalse(Advert.objects.filter(pk=advert.pk).exists())
 
 
-class TestSnippetDeleteMultipleWithOne(WagtailTestUtils, TestCase):
-    # test deletion of one snippet using the delete-multiple URL
-    # behaviour should mimic the TestSnippetDelete but with different URl structure
-    fixtures = ["test.json"]
-
-    def setUp(self):
-        self.snippet = Advert.objects.get(id=1)
-        self.login()
-
-    def test_delete_get(self):
-        url = reverse("wagtailsnippets_tests_advert:delete-multiple")
-        url += "?id=%s" % (self.snippet.id)
-        response = self.client.get(url)
-        self.assertEqual(response.status_code, 200)
-
-    def test_delete_post(self):
-        url = reverse("wagtailsnippets_tests_advert:delete-multiple")
-        url += "?id=%s" % (self.snippet.id)
-        response = self.client.post(url)
-
-        # Should be redirected to the listing page
-        self.assertRedirects(response, reverse("wagtailsnippets_tests_advert:list"))
-
-        # Check that the page is gone
-        self.assertEqual(Advert.objects.filter(text="test_advert").count(), 0)
-
-
-class TestSnippetDeleteMultipleWithThree(WagtailTestUtils, TestCase):
-    # test deletion of three snippets using the delete-multiple URL
-    fixtures = ["test.json"]
-
-    def setUp(self):
-        # first advert is in the fixtures
-        Advert.objects.create(text="Boreas").save()
-        Advert.objects.create(text="Cloud 9").save()
-        self.snippets = Advert.objects.all()
-        self.login()
-
-    def test_delete_get(self):
-        # tests that the URL is available on get
-        url = reverse("wagtailsnippets_tests_advert:delete-multiple")
-        url += "?id=%s" % (
-            "&id=".join(["%s" % snippet.id for snippet in self.snippets])
-        )
-        response = self.client.get(url)
-        self.assertEqual(response.status_code, 200)
-
-    def test_delete_post(self):
-        # tests that the URL is available on post and deletes snippets
-        url = reverse("wagtailsnippets_tests_advert:delete-multiple")
-        url += "?id=%s" % (
-            "&id=".join(["%s" % snippet.id for snippet in self.snippets])
-        )
-        response = self.client.post(url)
-
-        # Should be redirected to the listing page
-        self.assertRedirects(response, reverse("wagtailsnippets_tests_advert:list"))
-
-        # Check that the page is gone
-        self.assertEqual(Advert.objects.filter(text="test_advert").count(), 0)
-
-
 class TestSnippetChooserPanel(WagtailTestUtils, TestCase):
     fixtures = ["test.json"]
 
@@ -3800,6 +3678,7 @@ class TestSnippetChooserPanel(WagtailTestUtils, TestCase):
         self.assertIn(self.advert_text, field_html)
         self.assertIn("Choose advert", field_html)
         self.assertIn("Choose another advert", field_html)
+        self.assertIn("icon icon-snippet icon", field_html)
 
     def test_render_as_empty_field(self):
         test_snippet = SnippetChooserModel()
@@ -3859,133 +3738,6 @@ class TestSnippetOrdering(TestCase):
         )
 
 
-class TestUsageCount(TestCase):
-    fixtures = ["test.json"]
-
-    @classmethod
-    def setUpTestData(cls):
-        super().setUpTestData()
-        output = StringIO()
-        management.call_command("rebuild_references_index", stdout=output)
-
-    def test_snippet_usage_count(self):
-        advert = Advert.objects.get(pk=1)
-        self.assertEqual(advert.get_usage().count(), 2)
-
-
-class TestUsedBy(TestCase):
-    fixtures = ["test.json"]
-
-    @classmethod
-    def setUpTestData(cls):
-        super().setUpTestData()
-        output = StringIO()
-        management.call_command("rebuild_references_index", stdout=output)
-
-    def test_snippet_used_by(self):
-        advert = Advert.objects.get(pk=1)
-
-        self.assertIsInstance(advert.get_usage()[0], tuple)
-        self.assertIsInstance(advert.get_usage()[0][0], Page)
-        self.assertIsInstance(advert.get_usage()[0][1], list)
-        self.assertIsInstance(advert.get_usage()[0][1][0], ReferenceIndex)
-
-
-class TestSnippetUsageView(WagtailTestUtils, TestCase):
-    fixtures = ["test.json"]
-
-    def setUp(self):
-        self.user = self.login()
-
-    def test_use_latest_draft_as_title(self):
-        snippet = DraftStateModel.objects.create(text="Draft-enabled Foo, Published")
-        snippet.save_revision().publish()
-        snippet.text = "Draft-enabled Bar, In Draft"
-        snippet.save_revision()
-
-        response = self.client.get(
-            reverse(
-                "wagtailsnippets_tests_draftstatemodel:usage",
-                args=[quote(snippet.pk)],
-            )
-        )
-
-        # Should use the latest draft title in the header subtitle
-        self.assertContains(
-            response,
-            '<span class="w-header__subtitle">Draft-enabled Bar, In Draft</span>',
-        )
-
-    def test_usage(self):
-        # resave so that usage count gets updated
-        page = Page.objects.get(pk=2)
-        page.save()
-
-        gfk_page = GenericSnippetPage(
-            title="Generic snippet page",
-            snippet_content_object=Advert.objects.get(pk=1),
-        )
-        page.add_child(instance=gfk_page)
-
-        response = self.client.get(
-            reverse(
-                "wagtailsnippets_tests_advert:usage",
-                args=["1"],
-            )
-        )
-        self.assertContains(response, "Welcome to the Wagtail test site!")
-        self.assertContains(response, "Generic snippet page")
-        self.assertContains(response, "Snippet content object")
-
-    def test_usage_without_edit_permission_on_snippet(self):
-        # Create a user with basic admin backend access
-        user = self.create_user(
-            username="basicadmin", email="basicadmin@example.com", password="password"
-        )
-        admin_permission = Permission.objects.get(
-            content_type__app_label="wagtailadmin", codename="access_admin"
-        )
-        user.user_permissions.add(admin_permission)
-        self.login(username="basicadmin", password="password")
-
-        response = self.client.get(
-            reverse(
-                "wagtailsnippets_tests_advert:usage",
-                args=["1"],
-            )
-        )
-        self.assertEqual(response.status_code, 302)
-
-    def test_usage_without_edit_permission_on_page(self):
-        # resave so that usage count gets updated
-        page = Page.objects.get(pk=2)
-        page.save()
-
-        # Create a user with edit access to snippets but not pages
-        user = self.create_user(
-            username="basicadmin", email="basicadmin@example.com", password="password"
-        )
-        admin_permission = Permission.objects.get(
-            content_type__app_label="wagtailadmin", codename="access_admin"
-        )
-        advert_permission = Permission.objects.get(
-            content_type__app_label="tests", codename="change_advert"
-        )
-        user.user_permissions.add(admin_permission)
-        user.user_permissions.add(advert_permission)
-        self.login(username="basicadmin", password="password")
-
-        response = self.client.get(
-            reverse(
-                "wagtailsnippets_tests_advert:usage",
-                args=["1"],
-            )
-        )
-        self.assertEqual(response.status_code, 200)
-        self.assertNotContains(response, "Welcome to the Wagtail test site!")
-        self.assertContains(response, "(Private page)")
-
-
 class TestSnippetHistory(WagtailTestUtils, TestCase):
     fixtures = ["test.json"]
 
@@ -3993,12 +3745,9 @@ class TestSnippetHistory(WagtailTestUtils, TestCase):
         return self.client.get(self.get_url(snippet, "history"), params)
 
     def get_url(self, snippet, url_name, args=None):
-        app_label = snippet._meta.app_label
-        model_name = snippet._meta.model_name
-        view_name = f"wagtailsnippets_{app_label}_{model_name}:{url_name}"
         if args is None:
             args = [quote(snippet.pk)]
-        return reverse(view_name, args=args)
+        return reverse(snippet.snippet_viewset.get_url_name(url_name), args=args)
 
     def setUp(self):
         self.user = self.login()
@@ -4071,10 +3820,10 @@ class TestSnippetHistory(WagtailTestUtils, TestCase):
 
         # Should not show the "live version" or "current draft" status tags
         self.assertNotContains(
-            response, '<span class="status-tag primary">Live version</span>'
+            response, '<span class="w-status w-status--primary">Live version</span>'
         )
         self.assertNotContains(
-            response, '<span class="status-tag primary">Current draft</span>'
+            response, '<span class="w-status w-status--primary">Current draft</span>'
         )
 
         # The latest revision should have an "Edit" action instead of "Review"
@@ -4104,7 +3853,7 @@ class TestSnippetHistory(WagtailTestUtils, TestCase):
         # Should show the "live version" status tag for the published revision
         self.assertContains(
             response,
-            '<span class="status-tag primary">Live version</span>',
+            '<span class="w-status w-status--primary">Live version</span>',
             count=1,
             html=True,
         )
@@ -4112,7 +3861,7 @@ class TestSnippetHistory(WagtailTestUtils, TestCase):
         # Should show the "current draft" status tag for the draft revision
         self.assertContains(
             response,
-            '<span class="status-tag primary">Current draft</span>',
+            '<span class="w-status w-status--primary">Current draft</span>',
             count=1,
             html=True,
         )
@@ -4143,9 +3892,7 @@ class TestSnippetRevisions(WagtailTestUtils, TestCase):
         return self.client.post(self.revert_url, post_data)
 
     def get_url(self, url_name, args=None):
-        app_label = self.snippet._meta.app_label
-        model_name = self.snippet._meta.model_name
-        view_name = f"wagtailsnippets_{app_label}_{model_name}:{url_name}"
+        view_name = self.snippet.snippet_viewset.get_url_name(url_name)
         if args is None:
             args = [quote(self.snippet.pk)]
         return reverse(view_name, args=args)
@@ -4590,7 +4337,7 @@ class TestSnippetChoose(WagtailTestUtils, TestCase):
             Advert.objects.create(pk=i, text="advert %d" % i)
         response = self.get()
         self.assertEqual(response.status_code, 200)
-        self.assertEqual(response.context["items"][0].text, "advert 1")
+        self.assertEqual(response.context["results"][0].text, "advert 1")
 
     def test_simple_pagination(self):
 
@@ -4637,15 +4384,15 @@ class TestSnippetChoose(WagtailTestUtils, TestCase):
         self.assertIn('name="locale"', response_html)
 
         # Check both snippets are shown
-        self.assertEqual(len(response.context["items"]), 2)
-        self.assertEqual(response.context["items"][0].text, "English snippet")
-        self.assertEqual(response.context["items"][1].text, "French snippet")
+        self.assertEqual(len(response.context["results"]), 2)
+        self.assertEqual(response.context["results"][0].text, "English snippet")
+        self.assertEqual(response.context["results"][1].text, "French snippet")
 
         # Now test with a locale selected
         response = self.get({"locale": "en"})
 
-        self.assertEqual(len(response.context["items"]), 1)
-        self.assertEqual(response.context["items"][0].text, "English snippet")
+        self.assertEqual(len(response.context["results"]), 1)
+        self.assertEqual(response.context["results"][0].text, "English snippet")
 
 
 class TestSnippetChooseResults(WagtailTestUtils, TestCase):
@@ -4694,29 +4441,29 @@ class TestSnippetChooseStatus(WagtailTestUtils, TestCase):
         response = self.get("choose")
         html = response.json()["html"]
         self.assertTagInHTML("<th>Status</th>", html)
-        self.assertTagInHTML('<span class="status-tag">draft</span>', html)
-        self.assertTagInHTML('<span class="status-tag primary">live</span>', html)
+        self.assertTagInHTML('<span class="w-status">draft</span>', html)
         self.assertTagInHTML(
-            '<span class="status-tag primary">live + draft</span>', html
+            '<span class="w-status w-status--primary">live</span>', html
+        )
+        self.assertTagInHTML(
+            '<span class="w-status w-status--primary">live + draft</span>', html
         )
 
     def test_choose_results_view_shows_status_column(self):
         response = self.get("choose_results")
         self.assertContains(response, "<th>Status</th>", html=True)
+        self.assertContains(response, '<span class="w-status">draft</span>', html=True)
         self.assertContains(
-            response, '<span class="status-tag">draft</span>', html=True
-        )
-        self.assertContains(
-            response, '<span class="status-tag primary">live</span>', html=True
+            response, '<span class="w-status w-status--primary">live</span>', html=True
         )
         self.assertContains(
             response,
-            '<span class="status-tag primary">live + draft</span>',
+            '<span class="w-status w-status--primary">live + draft</span>',
             html=True,
         )
 
 
-class TestSnippetChooseWithSearchableSnippet(WagtailTestUtils, TestCase):
+class TestSnippetChooseWithSearchableSnippet(WagtailTestUtils, TransactionTestCase):
     def setUp(self):
         self.login()
 
@@ -4736,7 +4483,7 @@ class TestSnippetChooseWithSearchableSnippet(WagtailTestUtils, TestCase):
         self.assertTemplateUsed(response, "wagtailadmin/generic/chooser/chooser.html")
 
         # All snippets should be in items
-        items = list(response.context["items"].object_list)
+        items = list(response.context["results"].object_list)
         self.assertIn(self.snippet_a, items)
         self.assertIn(self.snippet_b, items)
         self.assertIn(self.snippet_c, items)
@@ -4749,7 +4496,7 @@ class TestSnippetChooseWithSearchableSnippet(WagtailTestUtils, TestCase):
         response = self.get({"q": "Hello"})
 
         # Just snippets with "Hello" should be in items
-        items = list(response.context["items"].object_list)
+        items = list(response.context["results"].object_list)
         self.assertIn(self.snippet_a, items)
         self.assertNotIn(self.snippet_b, items)
         self.assertIn(self.snippet_c, items)
@@ -4758,7 +4505,7 @@ class TestSnippetChooseWithSearchableSnippet(WagtailTestUtils, TestCase):
         response = self.get({"q": "World"})
 
         # Just snippets with "World" should be in items
-        items = list(response.context["items"].object_list)
+        items = list(response.context["results"].object_list)
         self.assertNotIn(self.snippet_a, items)
         self.assertIn(self.snippet_b, items)
         self.assertIn(self.snippet_c, items)
@@ -4767,7 +4514,7 @@ class TestSnippetChooseWithSearchableSnippet(WagtailTestUtils, TestCase):
         response = self.get({"q": "hello wo"})
 
         # should perform partial matching and return "Hello World"
-        items = list(response.context["items"].object_list)
+        items = list(response.context["results"].object_list)
         self.assertNotIn(self.snippet_a, items)
         self.assertNotIn(self.snippet_b, items)
         self.assertIn(self.snippet_c, items)
@@ -4818,7 +4565,7 @@ class TestAddOnlyPermissions(WagtailTestUtils, TestCase):
     def test_get_index(self):
         response = self.client.get(reverse("wagtailsnippets_tests_advert:list"))
         self.assertEqual(response.status_code, 200)
-        self.assertTemplateUsed(response, "wagtailsnippets/snippets/type_index.html")
+        self.assertTemplateUsed(response, "wagtailsnippets/snippets/index.html")
 
         # user should get an "Add advert" button
         self.assertContains(response, "Add advert")
@@ -4827,6 +4574,7 @@ class TestAddOnlyPermissions(WagtailTestUtils, TestCase):
         response = self.client.get(reverse("wagtailsnippets_tests_advert:add"))
         self.assertEqual(response.status_code, 200)
         self.assertTemplateUsed(response, "wagtailsnippets/snippets/create.html")
+        self.assertEqual(response.context["header_icon"], "snippet")
 
     def test_get_edit(self):
         response = self.client.get(
@@ -4845,13 +4593,6 @@ class TestAddOnlyPermissions(WagtailTestUtils, TestCase):
                 args=[quote(self.test_snippet.pk)],
             )
         )
-        # permission should be denied
-        self.assertRedirects(response, reverse("wagtailadmin_home"))
-
-    def test_get_delete_mulitple(self):
-        url = reverse("wagtailsnippets_tests_advert:delete-multiple")
-        url += "?id=%s" % self.test_snippet.id
-        response = self.client.get(url)
         # permission should be denied
         self.assertRedirects(response, reverse("wagtailadmin_home"))
 
@@ -4878,7 +4619,7 @@ class TestEditOnlyPermissions(WagtailTestUtils, TestCase):
     def test_get_index(self):
         response = self.client.get(reverse("wagtailsnippets_tests_advert:list"))
         self.assertEqual(response.status_code, 200)
-        self.assertTemplateUsed(response, "wagtailsnippets/snippets/type_index.html")
+        self.assertTemplateUsed(response, "wagtailsnippets/snippets/index.html")
 
         # user should not get an "Add advert" button
         self.assertNotContains(response, "Add advert")
@@ -4897,6 +4638,7 @@ class TestEditOnlyPermissions(WagtailTestUtils, TestCase):
         )
         self.assertEqual(response.status_code, 200)
         self.assertTemplateUsed(response, "wagtailsnippets/snippets/edit.html")
+        self.assertEqual(response.context["header_icon"], "snippet")
 
     def test_get_delete(self):
         response = self.client.get(
@@ -4905,13 +4647,6 @@ class TestEditOnlyPermissions(WagtailTestUtils, TestCase):
                 args=[quote(self.test_snippet.pk)],
             )
         )
-        # permission should be denied
-        self.assertRedirects(response, reverse("wagtailadmin_home"))
-
-    def test_get_delete_mulitple(self):
-        url = reverse("wagtailsnippets_tests_advert:delete-multiple")
-        url += "?id=%s" % self.test_snippet.id
-        response = self.client.get(url)
         # permission should be denied
         self.assertRedirects(response, reverse("wagtailadmin_home"))
 
@@ -4936,7 +4671,7 @@ class TestDeleteOnlyPermissions(WagtailTestUtils, TestCase):
     def test_get_index(self):
         response = self.client.get(reverse("wagtailsnippets_tests_advert:list"))
         self.assertEqual(response.status_code, 200)
-        self.assertTemplateUsed(response, "wagtailsnippets/snippets/type_index.html")
+        self.assertTemplateUsed(response, "wagtailsnippets/snippets/index.html")
 
         # user should not get an "Add advert" button
         self.assertNotContains(response, "Add advert")
@@ -4964,18 +4699,8 @@ class TestDeleteOnlyPermissions(WagtailTestUtils, TestCase):
             )
         )
         self.assertEqual(response.status_code, 200)
-        self.assertTemplateUsed(
-            response, "wagtailsnippets/snippets/confirm_delete.html"
-        )
-
-    def test_get_delete_mulitple(self):
-        url = reverse("wagtailsnippets_tests_advert:delete-multiple")
-        url += "?id=%s" % self.test_snippet.id
-        response = self.client.get(url)
-        self.assertEqual(response.status_code, 200)
-        self.assertTemplateUsed(
-            response, "wagtailsnippets/snippets/confirm_delete.html"
-        )
+        self.assertTemplateUsed(response, "wagtailadmin/generic/confirm_delete.html")
+        self.assertEqual(response.context["header_icon"], "snippet")
 
 
 class TestSnippetEditHandlers(WagtailTestUtils, TestCase):
@@ -5139,7 +4864,7 @@ class TestSnippetListViewWithCustomPrimaryKey(WagtailTestUtils, TestCase):
     def test_simple(self):
         response = self.get()
         self.assertEqual(response.status_code, 200)
-        self.assertTemplateUsed(response, "wagtailsnippets/snippets/type_index.html")
+        self.assertTemplateUsed(response, "wagtailsnippets/snippets/index.html")
 
         # All snippets should be in items
         items = list(response.context["page_obj"].object_list)
@@ -5159,27 +4884,22 @@ class TestSnippetViewWithCustomPrimaryKey(WagtailTestUtils, TestCase):
         )
 
     def get(self, snippet, params={}):
-        app_label = snippet._meta.app_label
-        model_name = snippet._meta.model_name
         args = [quote(snippet.pk)]
         return self.client.get(
-            reverse(f"wagtailsnippets_{app_label}_{model_name}:edit", args=args), params
+            reverse(snippet.snippet_viewset.get_url_name("edit"), args=args),
+            params,
         )
 
     def post(self, snippet, post_data={}):
-        app_label = snippet._meta.app_label
-        model_name = snippet._meta.model_name
         args = [quote(snippet.pk)]
         return self.client.post(
-            reverse(f"wagtailsnippets_{app_label}_{model_name}:edit", args=args),
+            reverse(snippet.snippet_viewset.get_url_name("edit"), args=args),
             post_data,
         )
 
     def create(self, snippet, post_data={}, model=Advert):
-        app_label = snippet._meta.app_label
-        model_name = snippet._meta.model_name
         return self.client.post(
-            reverse(f"wagtailsnippets_{app_label}_{model_name}:add"),
+            reverse(snippet.snippet_viewset.get_url_name("add")),
             post_data,
         )
 
@@ -5233,9 +4953,7 @@ class TestSnippetViewWithCustomPrimaryKey(WagtailTestUtils, TestCase):
             )
         )
         self.assertEqual(response.status_code, 200)
-        self.assertTemplateUsed(
-            response, "wagtailsnippets/snippets/confirm_delete.html"
-        )
+        self.assertTemplateUsed(response, "wagtailadmin/generic/confirm_delete.html")
 
     def test_usage_link(self):
         response = self.client.get(
@@ -5245,11 +4963,19 @@ class TestSnippetViewWithCustomPrimaryKey(WagtailTestUtils, TestCase):
             )
         )
         self.assertEqual(response.status_code, 200)
-        self.assertTemplateUsed(
-            response, "wagtailsnippets/snippets/confirm_delete.html"
+        self.assertTemplateUsed(response, "wagtailadmin/generic/confirm_delete.html")
+        self.assertContains(
+            response,
+            "This standard snippet with custom primary key is referenced 0 times",
         )
-        self.assertContains(response, "Used 0 times")
-        self.assertContains(response, self.snippet_a.usage_url())
+        self.assertContains(
+            response,
+            reverse(
+                "wagtailsnippets_snippetstests_standardsnippetwithcustomprimarykey:usage",
+                args=[quote(self.snippet_a.pk)],
+            )
+            + "?describe_on_delete=1",
+        )
 
     def test_redirect_to_edit(self):
         response = self.client.get(
@@ -5444,6 +5170,8 @@ class TestSnippetChooseWithCustomPrimaryKey(WagtailTestUtils, TestCase):
     def test_simple(self):
         response = self.get()
         self.assertTemplateUsed(response, "wagtailadmin/generic/chooser/chooser.html")
+        self.assertEqual(response.context["header_icon"], "snippet")
+        self.assertEqual(response.context["icon"], "snippet")
 
     def test_ordering(self):
         """
@@ -5454,7 +5182,7 @@ class TestSnippetChooseWithCustomPrimaryKey(WagtailTestUtils, TestCase):
             AdvertWithCustomPrimaryKey.objects.create(pk=i, text="advert %d" % i)
         response = self.get()
         self.assertEqual(response.status_code, 200)
-        self.assertEqual(response.context["items"][0].text, "advert 1")
+        self.assertEqual(response.context["results"][0].text, "advert 1")
 
 
 class TestSnippetChosenWithCustomPrimaryKey(WagtailTestUtils, TestCase):

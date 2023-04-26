@@ -4,7 +4,7 @@ import os.path
 import time
 from collections import OrderedDict
 from contextlib import contextmanager
-from io import BytesIO
+from tempfile import SpooledTemporaryFile
 from typing import Union
 
 import willow
@@ -38,6 +38,7 @@ from wagtail.images.rect import Rect
 from wagtail.models import CollectionMember, ReferenceIndex
 from wagtail.search import index
 from wagtail.search.queryset import SearchableQuerySetMixin
+from wagtail.utils.file import hash_filelike
 
 logger = logging.getLogger("wagtail.images")
 
@@ -47,6 +48,7 @@ IMAGE_FORMAT_EXTENSIONS = {
     "png": ".png",
     "gif": ".gif",
     "webp": ".webp",
+    "svg": ".svg",
 }
 
 
@@ -266,14 +268,13 @@ class AbstractImage(ImageFileMixin, CollectionMember, index.Indexed, models.Mode
 
     objects = ImageQuerySet.as_manager()
 
-    def _set_file_hash(self, file_contents):
-        self.file_hash = hashlib.sha1(file_contents).hexdigest()
+    def _set_file_hash(self):
+        with self.open_file() as f:
+            self.file_hash = hash_filelike(f)
 
     def get_file_hash(self):
         if self.file_hash == "":
-            with self.open_file() as f:
-                self._set_file_hash(f.read())
-
+            self._set_file_hash()
             self.save(update_fields=["file_hash"])
 
         return self.file_hash
@@ -285,7 +286,7 @@ class AbstractImage(ImageFileMixin, CollectionMember, index.Indexed, models.Mode
         self.file_size = self.file.size
 
         # Set new image file hash
-        self._set_file_hash(self.file.read())
+        self._set_file_hash()
         self.file.seek(0)
 
     def get_upload_to(self, filename):
@@ -310,7 +311,7 @@ class AbstractImage(ImageFileMixin, CollectionMember, index.Indexed, models.Mode
         return full_path
 
     def get_usage(self):
-        return ReferenceIndex.get_references_to(self).group_by_source_object()
+        return ReferenceIndex.get_grouped_references_to(self)
 
     @property
     def usage_url(self):
@@ -537,7 +538,10 @@ class AbstractImage(ImageFileMixin, CollectionMember, index.Indexed, models.Mode
         start_time = time.time()
 
         try:
-            generated_image = filter.run(self, BytesIO())
+            generated_image = filter.run(
+                self,
+                SpooledTemporaryFile(max_size=settings.FILE_UPLOAD_MAX_MEMORY_SIZE),
+            )
 
             logger.debug(
                 "Generated '%s' rendition for image %d in %.1fms",
@@ -578,6 +582,10 @@ class AbstractImage(ImageFileMixin, CollectionMember, index.Indexed, models.Mode
 
     def is_landscape(self):
         return self.height < self.width
+
+    def is_svg(self):
+        _, ext = os.path.splitext(self.file.name)
+        return ext.lower() == ".svg"
 
     @property
     def filename(self):
@@ -680,7 +688,7 @@ class Filter:
         if not size:
             size = (image.width, image.height)
 
-        transform = ImageTransform(size)
+        transform = ImageTransform(size, image_is_svg=image.is_svg())
         for operation in self.transform_operations:
             transform = operation.run(transform, image)
         return transform
@@ -761,6 +769,8 @@ class Filter:
                     quality = getattr(settings, "WAGTAILIMAGES_WEBP_QUALITY", 85)
 
                 return willow.save_as_webp(output, quality=quality)
+            elif output_format == "svg":
+                return willow.save_as_svg(output)
             raise UnknownOutputImageFormatError(
                 f"Unknown output image format '{output_format}'"
             )

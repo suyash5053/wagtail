@@ -4,16 +4,22 @@ from django.utils.safestring import mark_safe
 import wagtail.admin.rich_text.editors.draftail.features as draftail_features
 from wagtail import hooks
 from wagtail.admin.action_menu import ActionMenuItem
+from wagtail.admin.filters import WagtailFilterSet
 from wagtail.admin.menu import MenuItem
 from wagtail.admin.rich_text.converters.html_to_contentstate import BlockElementHandler
 from wagtail.admin.search import SearchArea
 from wagtail.admin.site_summary import SummaryItem
 from wagtail.admin.ui.components import Component
+from wagtail.admin.ui.tables import UpdatedAtColumn
 from wagtail.admin.views.account import BaseSettingsPanel
 from wagtail.admin.widgets import Button
 from wagtail.snippets.models import register_snippet
-from wagtail.test.snippets.models import FilterableSnippet
-from wagtail.test.snippets.views import FilterableSnippetViewSet
+from wagtail.snippets.views.snippets import SnippetViewSet
+from wagtail.test.testapp.models import (
+    DraftStateModel,
+    FullFeaturedSnippet,
+    ModeratedModel,
+)
 
 from .forms import FavouriteColourForm
 
@@ -225,4 +231,42 @@ def add_broken_links_summary_item(request, items):
     items.append(BrokenLinksSummaryItem(request))
 
 
-register_snippet(FilterableSnippet, viewset=FilterableSnippetViewSet)
+class FullFeaturedSnippetFilterSet(WagtailFilterSet):
+    class Meta:
+        model = FullFeaturedSnippet
+        fields = ["country_code", "some_date"]
+
+
+class FullFeaturedSnippetViewSet(SnippetViewSet):
+    icon = "cog"
+    admin_url_namespace = "some_namespace"
+    base_url_path = "deep/within/the/admin"
+    chooser_admin_url_namespace = "my_chooser_namespace"
+    chooser_base_url_path = "choose/wisely"
+    list_per_page = 5
+    chooser_per_page = 15
+    filterset_class = FullFeaturedSnippetFilterSet
+    list_display = ["text", "country_code", "get_foo_country_code", UpdatedAtColumn()]
+    index_template_name = "tests/fullfeaturedsnippet_index.html"
+
+    def get_history_template(self):
+        return "tests/snippet_history.html"
+
+    def get_queryset(self, request):
+        return self.model._default_manager.all().exclude(text__contains="[HIDDEN]")
+
+
+class DraftStateModelViewSet(SnippetViewSet):
+    list_filter = ["text", "first_published_at"]
+
+
+class ModeratedModelViewSet(SnippetViewSet):
+    list_filter = {
+        "text": ["exact", "contains"],
+        "first_published_at": ["exact", "lt", "gt"],
+    }
+
+
+register_snippet(FullFeaturedSnippet, viewset=FullFeaturedSnippetViewSet)
+register_snippet(DraftStateModel, viewset=DraftStateModelViewSet)
+register_snippet(ModeratedModel, viewset=ModeratedModelViewSet)

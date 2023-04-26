@@ -19,7 +19,7 @@ except ImportError:
 
 
 install_requires = [
-    "Django>=3.2,<4.2",
+    "Django>=3.2,<4.3",
     "django-modelcluster>=6.0,<7.0",
     "django-permissionedforms>=0.1,<1.0",
     "django-taggit>=2.0,<4.0",
@@ -30,7 +30,7 @@ install_requires = [
     "Pillow>=4.0.0,<10.0.0",
     "beautifulsoup4>=4.8,<4.12",
     "html5lib>=0.999,<2",
-    "Willow>=1.4,<1.5",
+    "Willow>=1.5,<1.6",
     "requests>=2.11.1,<3.0",
     "l18n>=2018.5",
     "openpyxl>=3.0.10,<4.0",
@@ -68,8 +68,8 @@ testing_extras = [
     "djhtml==1.5.2",
     # for validating string formats in .po translation files
     "polib>=1.1,<2.0",
-    # For streamfield migration toolkit
-    "wagtail-factories @ git+https://github.com/gasman/wagtail-factories.git@remove-wagtail-upper-bound#egg=wagtail-factories",
+    # For wagtail.test.utils.wagtail_factories (used for streamfield migration toolkit)
+    "factory-boy>=3.2",
 ]
 
 # Documentation dependencies
@@ -78,7 +78,7 @@ documentation_extras = [
     "sphinxcontrib-spelling>=5.4.0,<6",
     "Sphinx>=1.5.2",
     "sphinx-autobuild>=0.6.0",
-    "sphinx-wagtail-theme==5.3.2",
+    "sphinx-wagtail-theme==6.0.0",
     "myst_parser==0.18.1",
     "sphinx_copybutton>=0.5,<1.0",
 ]
@@ -118,8 +118,8 @@ https://github.com/wagtail/wagtail/.",
         "Programming Language :: Python :: 3.11",
         "Framework :: Django",
         "Framework :: Django :: 3.2",
-        "Framework :: Django :: 4.0",
         "Framework :: Django :: 4.1",
+        "Framework :: Django :: 4.2",
         "Framework :: Wagtail",
         "Topic :: Internet :: WWW/HTTP :: Site Management",
     ],

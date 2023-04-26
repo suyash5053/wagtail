@@ -55,6 +55,7 @@ from wagtail.contrib.settings.models import (
 from wagtail.contrib.sitemaps import Sitemap
 from wagtail.contrib.table_block.blocks import TableBlock
 from wagtail.documents import get_document_model
+from wagtail.documents.blocks import DocumentChooserBlock
 from wagtail.documents.models import AbstractDocument, Document
 from wagtail.fields import RichTextField, StreamField
 from wagtail.images import get_image_model
@@ -74,6 +75,7 @@ from wagtail.models import (
     WorkflowMixin,
 )
 from wagtail.search import index
+from wagtail.snippets.blocks import SnippetChooserBlock
 from wagtail.snippets.models import register_snippet
 
 from .forms import FormClassAdditionalFieldPageForm, ValidatedPageForm
@@ -370,7 +372,7 @@ class EventPage(Page):
     )
     categories = ParentalManyToManyField(EventCategory, blank=True)
 
-    search_fields = [
+    search_fields = Page.search_fields + [
         index.SearchField("get_audience_display"),
         index.SearchField("location"),
         index.SearchField("body"),
@@ -1008,9 +1010,6 @@ class DraftStateModel(DraftStateMixin, LockableMixin, RevisionMixin, models.Mode
         return self.text
 
 
-register_snippet(DraftStateModel)
-
-
 class DraftStateCustomPrimaryKeyModel(DraftStateMixin, RevisionMixin, models.Model):
     custom_id = models.CharField(max_length=255, primary_key=True)
     text = models.TextField()
@@ -1105,9 +1104,6 @@ class ModeratedModel(WorkflowMixin, DraftStateMixin, RevisionMixin, models.Model
         return self.text
 
 
-register_snippet(ModeratedModel)
-
-
 # Snippet with all mixins enabled
 
 
@@ -1118,9 +1114,28 @@ class FullFeaturedSnippet(
     LockableMixin,
     RevisionMixin,
     TranslatableMixin,
+    index.Indexed,
     models.Model,
 ):
+    class CountryCode(models.TextChoices):
+        INDONESIA = "ID"
+        PHILIPPINES = "PH"
+        UNITED_KINGDOM = "UK"
+
     text = models.TextField()
+    country_code = models.CharField(
+        max_length=2,
+        choices=CountryCode.choices,
+        default=CountryCode.UNITED_KINGDOM,
+        blank=True,
+    )
+    some_date = models.DateField(auto_now=True)
+
+    search_fields = [
+        index.SearchField("text"),
+        index.FilterField("text"),
+        index.FilterField("country_code"),
+    ]
 
     def __str__(self):
         return self.text
@@ -1128,12 +1143,103 @@ class FullFeaturedSnippet(
     def get_preview_template(self, request, mode_name):
         return "tests/previewable_model.html"
 
+    def get_foo_country_code(self):
+        return f"Foo {self.country_code}"
+
+    get_foo_country_code.admin_order_field = "country_code"
+    get_foo_country_code.short_description = "Custom foo column"
+
     class Meta(TranslatableMixin.Meta):
         verbose_name = "full-featured snippet"
         verbose_name_plural = "full-featured snippets"
 
 
-register_snippet(FullFeaturedSnippet)
+def get_default_advert():
+    return Advert.objects.first()
+
+
+class VariousOnDeleteModel(models.Model):
+    text = models.TextField()
+    on_delete_cascade = models.ForeignKey(
+        Advert, on_delete=models.CASCADE, null=True, blank=True, related_name="+"
+    )
+    on_delete_protect = models.ForeignKey(
+        Advert, on_delete=models.PROTECT, null=True, blank=True, related_name="+"
+    )
+    on_delete_restrict = models.ForeignKey(
+        Advert, on_delete=models.RESTRICT, null=True, blank=True, related_name="+"
+    )
+    on_delete_set_null = models.ForeignKey(
+        Advert, on_delete=models.SET_NULL, null=True, blank=True, related_name="+"
+    )
+    on_delete_set_default = models.ForeignKey(
+        Advert,
+        on_delete=models.SET_DEFAULT,
+        null=True,
+        blank=True,
+        default=get_default_advert,
+        related_name="+",
+    )
+    on_delete_set = models.ForeignKey(
+        Advert,
+        on_delete=models.SET(get_default_advert),
+        null=True,
+        blank=True,
+        related_name="+",
+    )
+    on_delete_do_nothing = models.ForeignKey(
+        Advert, on_delete=models.DO_NOTHING, null=True, blank=True, related_name="+"
+    )
+
+    protected_image = models.ForeignKey(
+        "wagtailimages.Image",
+        on_delete=models.PROTECT,
+        null=True,
+        blank=True,
+        related_name="+",
+    )
+    protected_document = models.ForeignKey(
+        "wagtaildocs.Document",
+        on_delete=models.PROTECT,
+        null=True,
+        blank=True,
+        related_name="+",
+    )
+
+    content_type = models.ForeignKey(
+        ContentType, on_delete=models.CASCADE, null=True, blank=True
+    )
+    object_id = models.UUIDField(null=True, blank=True)
+    content_object = GenericForeignKey("content_type", "object_id")
+
+    stream_field = StreamField(
+        [
+            (
+                "advertisement_content",
+                StreamBlock(
+                    [
+                        (
+                            "captioned_advert",
+                            StructBlock(
+                                [
+                                    ("advert", SnippetChooserBlock(Advert)),
+                                    ("caption", CharBlock()),
+                                ],
+                            ),
+                        ),
+                        ("rich_text", RichTextBlock()),
+                    ]
+                ),
+            ),
+            ("image", ImageChooserBlock()),
+            ("document", DocumentChooserBlock()),
+        ],
+        use_json_field=True,
+    )
+    rich_text = RichTextField(blank=True)
+
+
+register_snippet(VariousOnDeleteModel)
 
 
 class StandardIndex(Page):
@@ -1217,6 +1323,11 @@ class TaggedPage(Page):
         FieldPanel("tags"),
     ]
 
+    # Page.search_fields intentionally omitted to test warning
+    search_fields = [
+        index.SearchField("tags"),
+    ]
+
 
 class TaggedChildPage(TaggedPage):
     pass
@@ -1253,9 +1364,13 @@ class EventPageChooserModel(models.Model):
 
 class SnippetChooserModel(models.Model):
     advert = models.ForeignKey(Advert, help_text="help text", on_delete=models.CASCADE)
+    full_featured = models.ForeignKey(
+        FullFeaturedSnippet, on_delete=models.CASCADE, null=True, blank=True
+    )
 
     panels = [
         FieldPanel("advert"),
+        FieldPanel("full_featured"),
     ]
 
 

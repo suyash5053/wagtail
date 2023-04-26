@@ -9,11 +9,25 @@ from django.forms.fields import FileField, ImageField
 from django.template.defaultfilters import filesizeformat
 from django.utils.translation import gettext_lazy as _
 
-ALLOWED_EXTENSIONS = ["gif", "jpg", "jpeg", "png", "webp"]
+
+def get_allowed_image_extensions():
+    return getattr(
+        settings, "WAGTAILIMAGES_EXTENSIONS", ["gif", "jpg", "jpeg", "png", "webp"]
+    )
+
+
+def ImageFileExtensionValidator(value):
+    # This makes testing different values of WAGTAILIMAGES_EXTENSIONS easier:
+    # if WagtailImageField.default_validators
+    #      = FileExtensionValidator(get_allowed_image_extensions())
+    # then the formats that will pass validation are fixed at the time the class
+    # is created, so changes to WAGTAILIMAGES_EXTENSIONS via override_settings
+    # has no effect.
+    return FileExtensionValidator(get_allowed_image_extensions())(value)
 
 
 class WagtailImageField(ImageField):
-    default_validators = [FileExtensionValidator(ALLOWED_EXTENSIONS)]
+    default_validators = [ImageFileExtensionValidator]
 
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
@@ -27,9 +41,7 @@ class WagtailImageField(ImageField):
         )
         self.max_upload_size_text = filesizeformat(self.max_upload_size)
 
-        self.allowed_image_extensions = getattr(
-            settings, "WAGTAILIMAGES_EXTENSIONS", ALLOWED_EXTENSIONS
-        )
+        self.allowed_image_extensions = get_allowed_image_extensions()
 
         self.supported_formats_text = ", ".join(self.allowed_image_extensions).upper()
 
@@ -134,11 +146,11 @@ class WagtailImageField(ImageField):
         if f is None:
             return None
 
-        # We need to get a file object for Pillow. When we get a path, we need to open
-        # the file first. And we have to read the data into memory to pass to Willow.
+        # Get the file content ready for Willow
         if hasattr(data, "temporary_file_path"):
-            with open(data.temporary_file_path(), "rb") as fh:
-                file = BytesIO(fh.read())
+            # Django's `TemporaryUploadedFile` is enough of a file to satisfy Willow
+            # Willow doesn't support opening images by path https://github.com/wagtail/Willow/issues/108
+            file = data
         else:
             if hasattr(data, "read"):
                 file = BytesIO(data.read())

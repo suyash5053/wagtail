@@ -90,7 +90,7 @@ class MoveDownButton extends ActionButton {
 class DuplicateButton extends ActionButton {
   enableEvent = 'enableDuplication';
   disableEvent = 'disableDuplication';
-  icon = 'duplicate';
+  icon = 'copy';
   labelIdentifier = 'DUPLICATE';
 
   onClick() {
@@ -143,7 +143,7 @@ export class BaseSequenceChild extends EventEmitter {
           ? `data-contentpath="${h(this.id)}"`
           : 'data-contentpath-disabled'
       }>
-        <input type="hidden"  name="${this.prefix}-deleted" value="">
+        <input type="hidden" name="${this.prefix}-deleted" value="">
         <input type="hidden" name="${this.prefix}-order" value="${index}">
         <input type="hidden" name="${this.prefix}-type" value="${h(
       this.type || '',
@@ -178,13 +178,7 @@ export class BaseSequenceChild extends EventEmitter {
               </svg>
             </a>
             <div class="w-panel__divider"></div>
-            <div class="w-panel__controls" data-panel-controls>
-              <div class="w-panel__controls-cue">
-                <svg class="icon icon-dots-horizontal w-panel__icon" aria-hidden="true">
-                  <use href="#icon-dots-horizontal"></use>
-                </svg>
-              </div>
-            </div>
+            <div class="w-panel__controls" data-panel-controls></div>
           </div>
           <div id="${contentId}" class="w-panel__content">
             <div data-streamfield-block></div>

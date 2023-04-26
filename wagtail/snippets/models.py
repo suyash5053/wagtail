@@ -4,18 +4,13 @@ from django.contrib.admin.utils import quote
 from django.contrib.auth import get_permission_codename
 from django.contrib.auth.models import Permission
 from django.contrib.contenttypes.models import ContentType
-from django.core import checks
 from django.db import DEFAULT_DB_ALIAS
-from django.db.models import ForeignKey
 from django.urls import reverse
 from django.utils.module_loading import import_string
 
-from wagtail.admin.checks import check_panels_in_model
-from wagtail.admin.forms.models import register_form_field_override
 from wagtail.admin.viewsets import viewsets
-from wagtail.models import DraftStateMixin, LockableMixin, ReferenceIndex, WorkflowMixin
-
-from .widgets import AdminSnippetChooser
+from wagtail.hooks import search_for_hooks
+from wagtail.models import DraftStateMixin, LockableMixin, WorkflowMixin
 
 SNIPPET_MODELS = []
 
@@ -31,12 +26,16 @@ DEFERRED_REGISTRATIONS = []
 
 
 def get_snippet_models():
+    # Snippets can be registered in wagtail_hooks.py by calling register_snippet
+    # as a function instead of a decorator. Make sure we search for hooks before
+    # returning the list of snippet models.
+    search_for_hooks()
     return SNIPPET_MODELS
 
 
 @lru_cache(maxsize=None)
 def get_workflow_enabled_models():
-    return [model for model in SNIPPET_MODELS if issubclass(model, WorkflowMixin)]
+    return [model for model in get_snippet_models() if issubclass(model, WorkflowMixin)]
 
 
 def get_editable_models(user):
@@ -44,7 +43,7 @@ def get_editable_models(user):
 
     return [
         model
-        for model in SNIPPET_MODELS
+        for model in get_snippet_models()
         if user.has_perm(get_permission_name("change", model))
     ]
 
@@ -63,11 +62,9 @@ class SnippetAdminURLFinder:
             self.user_can_edit = True
 
     def get_edit_url(self, instance):
-        app_label = self.model._meta.app_label
-        model_name = self.model._meta.model_name
         if self.user_can_edit:
             return reverse(
-                f"wagtailsnippets_{app_label}_{model_name}:edit",
+                instance.snippet_viewset.get_url_name("edit"),
                 args=[quote(instance.pk)],
             )
 
@@ -91,65 +88,19 @@ def _register_snippet_immediately(model, viewset=None):
         # Do not create duplicate registrations of the same model
         return
 
-    from wagtail.snippets.views.chooser import SnippetChooserViewSet
     from wagtail.snippets.views.snippets import SnippetViewSet
-
-    model.get_usage = lambda obj: ReferenceIndex.get_references_to(
-        obj
-    ).group_by_source_object()
-    model.usage_url = get_snippet_usage_url
-    model.get_admin_base_path = get_admin_base_path
-    model.get_admin_url_namespace = get_admin_url_namespace
 
     if viewset is None:
         viewset = SnippetViewSet
     elif isinstance(viewset, str):
         viewset = import_string(viewset)
 
-    admin_viewset = viewset(
-        model.get_admin_url_namespace(),
-        model=model,
-        url_prefix=model.get_admin_base_path(),
-    )
-
-    chooser_viewset = SnippetChooserViewSet(
-        f"wagtailsnippetchoosers_{model._meta.app_label}_{model._meta.model_name}",
-        model=model,
-        url_prefix=f"snippets/choose/{model._meta.app_label}/{model._meta.model_name}",
-    )
-
+    admin_viewset = viewset(model)
     viewsets.register(admin_viewset)
-    viewsets.register(chooser_viewset)
+    model.snippet_viewset = admin_viewset
 
     SNIPPET_MODELS.append(model)
     SNIPPET_MODELS.sort(key=lambda x: x._meta.verbose_name)
-
-    @checks.register("panels")
-    def modeladmin_model_check(app_configs, **kwargs):
-        errors = check_panels_in_model(model, "snippets")
-        return errors
-
-    # Set up admin model forms to use AdminSnippetChooser for any ForeignKey to this model
-    register_form_field_override(
-        ForeignKey, to=model, override={"widget": AdminSnippetChooser(model=model)}
-    )
-
-
-def get_snippet_usage_url(self):
-    return reverse(
-        f"wagtailsnippets_{self._meta.app_label}_{self._meta.model_name}:usage",
-        args=[quote(self.pk)],
-    )
-
-
-@classmethod
-def get_admin_base_path(cls):
-    return f"snippets/{cls._meta.app_label}/{cls._meta.model_name}"
-
-
-@classmethod
-def get_admin_url_namespace(cls):
-    return f"wagtailsnippets_{cls._meta.app_label}_{cls._meta.model_name}"
 
 
 def register_deferred_snippets():
@@ -172,7 +123,7 @@ def create_extra_permissions(*args, using=DEFAULT_DB_ALIAS, **kwargs):
         )
 
     model_cts = ContentType.objects.get_for_models(
-        *SNIPPET_MODELS, for_concrete_models=False
+        *get_snippet_models(), for_concrete_models=False
     )
 
     permissions = []

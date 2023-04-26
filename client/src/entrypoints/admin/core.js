@@ -2,7 +2,6 @@ import $ from 'jquery';
 
 import { coreControllerDefinitions } from '../../controllers';
 import { escapeHtml } from '../../utils/text';
-import { initButtonSelects } from '../../includes/initButtonSelects';
 import { initStimulus } from '../../includes/initStimulus';
 import { initTagField } from '../../includes/initTagField';
 import { initTooltips } from '../../includes/initTooltips';
@@ -187,19 +186,6 @@ $(() => {
   // Add class to the body from which transitions may be hung so they don't appear to transition as the page loads
   $('body').addClass('ready');
 
-  /* Functions that need to run/rerun when active tabs are changed */
-  function resizeTextAreas() {
-    // eslint-disable-next-line func-names
-    $('textarea[data-autosize-on]').each(function () {
-      // eslint-disable-next-line no-undef
-      autosize.update($(this).get());
-    });
-  }
-
-  // Resize textareas on page load and when tab changed
-  $(document).ready(resizeTextAreas);
-  document.addEventListener('wagtail:tab-changed', resizeTextAreas);
-
   // eslint-disable-next-line func-names
   $('.dropdown').each(function () {
     const $dropdown = $(this);
@@ -309,11 +295,8 @@ if (!wagtail.ui) {
 const DROPDOWN_SELECTOR = '[data-dropdown]';
 const LISTING_TITLE_SELECTOR = '[data-listing-page-title]';
 const LISTING_ACTIVE_CLASS = 'listing__item--active';
-const ICON_DOWN = 'icon-arrow-down';
-const ICON_UP = 'icon-arrow-up';
 const IS_OPEN = 'is-open';
 const clickEvent = 'click';
-const TOGGLE_SELECTOR = '[data-dropdown-toggle]';
 const ARIA = 'aria-hidden';
 const keys = {
   ESC: 27,
@@ -427,15 +410,12 @@ DropDown.prototype = {
     e.preventDefault();
     const el = this.el;
     const $parent = this.$parent;
-    const toggle = el.querySelector(TOGGLE_SELECTOR);
 
     this.state.isOpen = true;
     this.registry.closeAllExcept(this);
 
     el.classList.add(IS_OPEN);
     el.setAttribute(ARIA, false);
-    toggle.classList.remove(ICON_DOWN);
-    toggle.classList.add(ICON_UP);
     document.addEventListener(clickEvent, this.clickOutsideDropDown, false);
     $parent.addClass(LISTING_ACTIVE_CLASS);
   },
@@ -445,11 +425,8 @@ DropDown.prototype = {
 
     const el = this.el;
     const $parent = this.$parent;
-    const toggle = el.querySelector(TOGGLE_SELECTOR);
     document.removeEventListener(clickEvent, this.clickOutsideDropDown, false);
     el.classList.remove(IS_OPEN);
-    toggle.classList.add(ICON_DOWN);
-    toggle.classList.remove(ICON_UP);
     el.setAttribute(ARIA, true);
     $parent.removeClass(LISTING_ACTIVE_CLASS);
   },
@@ -486,7 +463,5 @@ function initDropDowns() {
 $(document).ready(initDropDowns);
 wagtail.ui.initDropDowns = initDropDowns;
 wagtail.ui.DropDownController = DropDownController;
-
-$(document).ready(initButtonSelects);
 
 window.wagtail = wagtail;

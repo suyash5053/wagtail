@@ -698,6 +698,14 @@ Contributors
 * Jatin Kumar
 * Hans Kelson
 * Sam
+* Deepam Priyadarshi
+* Mng
+* George Sakkis
+* Mehul Aggarwal
+* Babitha Kumari
+* Mansi Gundre
+* Hanoon
+* Steve Steinwand
 
 Translators
 ===========

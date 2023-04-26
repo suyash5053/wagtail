@@ -4,8 +4,6 @@
 {% block extra_css %}
     {{ block.super }}
 
-    <link rel="stylesheet" href="{% versioned_static 'wagtailstyleguide/css/styleguide.css' %}" type="text/css" />
-
     {{ example_form.media.css }}
 {% endblock %}
 
@@ -13,32 +11,15 @@
 {% block bodyclass %}styleguide{% endblock %}
 
 {% block content %}
+    <div class="w-sticky w-top-0 w-z-header">
+        <aside aria-label="{% trans 'Minimap' %}" data-minimap-container></aside>
+    </div>
+
     {% trans "Styleguide" as title_trans %}
     {% include "wagtailadmin/shared/header.html" with title=title_trans icon='image' %}
 
     <div class="nice-padding">
-        <h2>Contents</h2>
-        <nav>
-            <ul class="w-pl-0">
-                <li><a href="#typography">Typography</a></li>
-                <li><a href="#help">Help text</a></li>
-                <li><a href="#listings">Listings</a></li>
-                <li><a href="#pagination">Pagination</a></li>
-                <li><a href="#buttons">Buttons</a></li>
-                <li><a href="#dropdowns">Dropdown buttons</a></li>
-                <li><a href="#dialog">Dialogs</a></li>
-                <li><a href="#header">Header</a></li>
-                <li><a href="#forms">Forms</a></li>
-                <li><a href="#editor">Page editor</a></li>
-                <li><a href="#tabs">Tabs</a></li>
-                <li><a href="#progress">Progress indicators</a></li>
-                <li><a href="#misc">Misc formatters</a></li>
-                <li><a href="#icons">Icons</a></li>
-            </ul>
-        </nav>
-
-        <section id="typography">
-            <h2>Typography</h2>
+        {% panel id="typography" heading="Typography" %}
             <h1>This is an h1</h1>
             <h2>This is an h2</h2>
             <h3>This is an h3</h3>
@@ -60,10 +41,9 @@
 
             <code>This is an example of code</code>
 
-        </section>
+        {% endpanel %}
 
-        <section id="help">
-            <h2>Help text</h2>
+        {% panel id="help" heading="Help text" %}
 
             <p>
                 Help text is not to be confused with the messages that appear in a banner drop down from the top of the screen. Help text are permanent instructions, visible on every page view, that explain or warn about something.
@@ -82,10 +62,9 @@
                 A critical message would probably be rare, in cases where a particularly brittle or <a href="#help">dangerously destructive action</a> could be performed and needs to be warned about.
             {% endhelp_block %}
 
-        </section>
+        {% endpanel %}
 
-        <section id="listings">
-            <h2>Listings</h2>
+        {% panel id="listings" heading="Listings" %}
 
             <h3><code>table</code> listing</h3>
             <table class="listing">
@@ -193,15 +172,13 @@
                     </tr>
                 </tbody>
             </table>
-        </section>
+        {% endpanel %}
 
-        <section id="pagination">
-            <h2>Pagination</h2>
+        {% panel id="pagination" heading="Pagination" %}
             {% paginate example_page %}
-        </section>
+        {% endpanel %}
 
-        <section id="buttons">
-            <h2>Buttons</h2>
+        {% panel id="buttons" heading="Buttons" %}
             <p class="help-block help-warning">{% icon name='warning' %}Do not use <code>{% filter force_escape|lower %}<input type="button">{% endfilter %}</code> use <code>{% filter force_escape|lower %}<button type="button"></button>{% endfilter %}</code> instead. This addresses inconsistencies between rendering of buttons across browsers.</p>
             <p>Buttons must have interaction possible (i.e be an input or button element) to get a suitable hover cursor.</p>
 
@@ -340,13 +317,12 @@
 
             <h3>Mixtures</h3>
 
-            <button class="button button--icon text-replace" type="button">{% icon name="tick" %}A proper button</button>
+            <button class="button button--icon text-replace" type="button">{% icon name="check" %}A proper button</button>
             <a href="#" class="button button--icon text-replace white">{% icon name="cog" %}A link button</a>
-            <a href="#" class="button button--icon bicolor disabled">{% icon name="tick" wrapped=1 %}button link</a>
-        </section>
+            <a href="#" class="button button--icon bicolor disabled">{% icon name="check" wrapped=1 %}button link</a>
+        {% endpanel %}
 
-        <section id="dropdowns">
-            <h2>Dropdown buttons</h2>
+        {% panel id="dropdowns" heading="Dropdown buttons" %}
 
             <div class="row">
                 <div class="col3">
@@ -384,7 +360,7 @@
 
                 <div class="col3">
                     <div class="dropdown dropup dropdown-button match-width">
-                        <button value="drop up" class="button icon icon-view">icon dropup</button>
+                        <button value="drop up" class="button">{% icon name="view" %}icon dropup</button>
                         <div class="dropdown-toggle">{% icon name="arrow-up" %}</div>
                         <ul>
                             <li><a href="#">item 1</a></li>
@@ -410,7 +386,7 @@
                 <div class="col3">
                     <div class="dropdown dropdown-button dropdown-button--white">
                         <a href="#" class="button" value="drop down">White drop down</a>
-                        <div class="dropdown-toggle icon icon-arrow-down"></div>
+                        <div class="dropdown-toggle">{% icon name="arrow-down" %}</div>
                         <ul>
                             <li><a href="#">items should not exceed button match-width</a></li>
                             <li><a href="#">item 2</a></li>
@@ -434,7 +410,7 @@
                 <div class="c-dropdown t-default" data-dropdown="">
                     <a class="c-dropdown__button  u-btn-current">
                         More
-                        <div data-dropdown-toggle="" class="o-icon  c-dropdown__toggle c-dropdown__togle--icon  [ icon icon-arrow-down ]">
+                        <div data-dropdown-toggle="" class="o-icon  c-dropdown__toggle c-dropdown__togle--icon">
                             {% icon name="arrow-down" %}
                             {% icon name="arrow-up" %}
                         </div>
@@ -473,7 +449,7 @@
                 <div class="c-dropdown t-inverted" data-dropdown="">
                     <a class="c-dropdown__button  u-btn-current">
                         More
-                        <div data-dropdown-toggle="" class="o-icon  c-dropdown__toggle c-dropdown__togle--icon  [ icon icon-arrow-down ]">
+                        <div data-dropdown-toggle="" class="o-icon  c-dropdown__toggle c-dropdown__togle--icon">
                             {% icon name="arrow-down" %}
                             {% icon name="arrow-up" %}
                         </div>
@@ -493,10 +469,9 @@
             </header>
 
 
-        </section>
+        {% endpanel %}
 
-        <section id="dialog">
-            <h2>Dialogs</h2>
+        {% panel id="dialog" heading="Dialogs" %}
 
             <div class="w-flex w-gap-4">
                 <div>
@@ -542,19 +517,17 @@
                     {% enddialog %}
                 </div>
             </div>
-        </section>
+        {% endpanel %}
 
-        <section id="header">
-            <h2>Header</h2>
+        {% panel id="header" heading="Header" %}
 
             {% include "wagtailadmin/shared/header.html" with title=title_trans %}
 
             {% url "wagtailstyleguide" as add_link %}
             {% include "wagtailadmin/shared/header.html" with title=title_trans action_url=add_link icon="image" action_text="button" search_url="wagtailimages:index" %}
-        </section>
+        {% endpanel %}
 
-        <section id="forms">
-            <h2>Forms</h2>
+        {% panel id="forms" heading="Forms" %}
 
             <form>
                 <ul class="fields">
@@ -568,14 +541,10 @@
                     <li><button type="submit" class="button">{% trans 'Save' %}</button><a href="#" class="button no">{% trans "Delete image" %}</a></li>
                 </ul>
             </form>
-        </section>
+        {% endpanel %}
 
-        <section id="editor">
-            <h2>Page editor</h2>
-        </section>
-
-        <section id="tabs">
-            <h2>Tabs</h2>
+        {% panel id="editor" heading="Page editor" %}
+            <h3>Tabs</h3>
 
             <div class="w-tabs" data-tabs>
                 <div role="tablist" class="w-tabs__list">
@@ -592,11 +561,9 @@
                     {% include 'wagtailadmin/shared/tabs/tab_nav_link.html' with tab_id='tab-errors-2' title='Tab 2' errors_count='55' %}
                 </div>
             </div>
-        </section>
+        {% endpanel %}
 
-        <section id="progress">
-            <h2>Progress indicators</h2>
-
+        {% panel id="progress" heading="Progress indicators" %}
             <div id="progress-example" class="progress active">
                 <div class="bar">60%</div>
             </div>
@@ -606,10 +573,9 @@
             <div id="progress-example2" class="progress active">
                 <div class="bar" style="width: 50%;">50%</div>
             </div>
-        </section>
+        {% endpanel %}
 
-        <section id="misc">
-            <h2>Misc formatters</h2>
+        {% panel id="misc" heading="Misc formatters" %}
             <h3>Avatar icons</h3>
 
             <p>{% avatar %} Avatar normal</p>
@@ -617,10 +583,10 @@
             <p>{% avatar size="small" %} Avatar small</p>
 
             <h3>Status tags</h3>
-            <div>{% status "status tag primary" classname="primary" %}</div>
+            <div>{% status "status tag primary" classname="w-status--primary" %}</div>
             <div>{% status "status tag secondary" %}</div>
-            <div>{% status "status tag label" classname="status-tag--label" %}</div>
-            <div>{% status "status tag link" url="https://wagtail.org/" title="wagtail.org" hidden_label="current status" classname="primary" %}</div>
+            <div>{% status "status tag label" classname="w-status--label" %}</div>
+            <div>{% status "status tag link" url="https://wagtail.org/" title="wagtail.org" hidden_label="current status" classname="w-status--primary" %}</div>
 
             <h3>Loading mask</h3>
             <p>Add the following <code>div</code> around any items you wish to display with a spinner overlay and fading out</p>
@@ -632,118 +598,45 @@
             <h3>Image transparency</h3>
             <p>It can be useful to show users the transparent areas of images. Add a transparency checkerboard with the <code>.show-transparency</code> on the <code>img</code> tag thus:</p>
             <img src="{% versioned_static 'wagtailadmin/images/wagtail-logo.svg' %}" width="200" class="show-transparency" alt="Wagtail"/>
-        </section>
+        {% endpanel %}
 
-        <section id="icons" class="icons">
-            <h2>SVG Icons</h2>
+        {% panel id="icons" heading="Icons" %}
 
-            <style>
-                .spinning {
-                    animation-name: spin-wag;
-                    animation-duration: 500ms;
-                    animation-iteration-count: infinite;
-                    animation-timing-function: linear;
-                }
-            </style>
-
-            <ul class="w-list-none">
-                <li>{% icon 'wagtail-icon' %} wagtail</li>
-                <li>{% icon 'wagtail-inverse' %} wagtail-inverse</li>
-                <li>{% icon 'cogs' %} cogs</li>
-                <li>{% icon 'doc-empty-inverse' %} doc-empty-inverse</li>
-                <li>{% icon 'doc-empty' %} doc-empty</li>
-                <li>{% icon 'edit' %} edit</li>
-                <li>{% icon 'arrow-up' %} arrow-up</li>
-                <li>{% icon 'arrow-down' %} arrow-down</li>
-                <li>{% icon 'search' %} search</li>
-                <li>{% icon 'cross' %} cross</li>
-                <li>{% icon 'folder-open-1' %} folder-open-1</li>
-                <li>{% icon 'folder-inverse' %} folder-inverse</li>
-                <li>{% icon 'mail' %} mail</li>
-                <li>{% icon 'arrows-up-down' %} arrows-up-down</li>
-                <li>{% icon 'lock' %} lock (locked)</li>
-                <li>{% icon 'lock-open' %} lock-open (unlocked)</li>
-                <li>{% icon 'arrow-right' %} arrow-right</li>
-                <li>{% icon 'doc-full' %} doc-full / file-text-alt</li>
-                <li>{% icon 'image' %} image / picture</li>
-                <li>{% icon 'doc-full-inverse' %} doc-full-inverse</li>
-                <li>{% icon 'draft' %} draft</li>
-                <li>{% icon 'folder' %} folder</li>
-                <li>{% icon 'plus' %} plus</li>
-                <li>{% icon 'tag' %} tag</li>
-                <li>{% icon 'folder-open-inverse' %} folder-open-inverse</li>
-                <li>{% icon 'clipboard-list' %} clipboard-list</li>
-                <li>{% icon 'tasks' %} tasks</li>
-                <li>{% icon 'cog' %} cog</li>
-                <li>{% icon 'tick' %} tick</li>
-                <li>{% icon 'user' %} user</li>
-                <li>{% icon 'arrow-left' %} arrow-left</li>
-                <li>{% icon 'tick-inverse' %} tick-inverse</li>
-                <li>{% icon 'plus-inverse' %} plus-inverse</li>
-                <li>{% icon 'snippet' %} snippet</li>
-                <li>{% icon 'bold' %} bold</li>
-                <li>{% icon 'italic' %} italic</li>
-                <li>{% icon 'undo' %} undo</li>
-                <li>{% icon 'history' %} history</li>
-                <li>{% icon 'repeat' %} repeat</li>
-                <li>{% icon 'list-ol' %} list-ol</li>
-                <li>{% icon 'list-ul' %} list-ul</li>
-                <li>{% icon 'link' %} link</li>
-                <li>{% icon 'link-external' %} link-external</li>
-                <li>{% icon 'superscript' %} superscript</li>
-                <li>{% icon 'subscript' %} subscript</li>
-                <li>{% icon 'strikethrough' %} strikethrough</li>
-                <li>{% icon 'radio-full' %} radio-full</li>
-                <li>{% icon 'radio-empty' %} radio-empty</li>
-                <li>{% icon 'arrow-up-big' %} arrow-up-big</li>
-                <li>{% icon 'arrow-down-big' %} arrow-down-big</li>
-                <li>{% icon 'group' %} group</li>
-                <li>{% icon 'media' %} media</li>
-                <li>{% icon 'horizontalrule' %} horizontalrule</li>
-                <li>{% icon 'password' %} password</li>
-                <li>{% icon 'download' %} download</li>
-                <li>{% icon 'duplicate' %} duplicate</li>
-                <li>{% icon 'download-alt' %} download-alt</li>
-                <li>{% icon 'upload' %} upload</li>
-                <li>{% icon 'order' %} order</li>
-                <li>{% icon 'grip' %} grip</li>
-                <li>{% icon 'home' %} home</li>
-                <li>{% icon 'order-down' %} order-down</li>
-                <li>{% icon 'order-up' %} order-up</li>
-                <li>{% icon 'bin' %} bin</li>
-
-                <li>{% icon 'spinner' 'icon spinning' %} spinner</li>
-
-                <li>{% icon 'pick' %} pick</li>
-                <li>{% icon 'redirect' %} redirect</li>
-                <li>{% icon 'view' %} view</li>
-                <li>{% icon 'no-view' %} no-view</li>
-                <li>{% icon 'collapse-up' %} collapse-up</li>
-                <li>{% icon 'collapse-down' %} collapse-down</li>
-                <li>{% icon 'comment' %} comment</li>
-                <li>{% icon 'help' %} help</li>
-                <li>{% icon 'warning' %} warning</li>
-                <li>{% icon 'error' %} error</li>
-                <li>{% icon 'success' %} success</li>
-                <li>{% icon 'date' %} date</li>
-                <li>{% icon 'time' %} time</li>
-                <li>{% icon 'form' %} form</li>
-                <li>{% icon 'site' %} site</li>
-                <li>{% icon 'placeholder' %} placeholder</li>
-                <li>{% icon 'pilcrow' %} pilcrow</li>
-                <li>{% icon 'title' %} title</li>
-                <li>{% icon 'code' %} code</li>
-                <li>{% icon 'openquote' %} openquote</li>
-                <li>{% icon 'chain-broken' %} chain-broken</li>
-                <li>{% icon 'table' %} table</li>
-                <li>{% icon 'login' %} login</li>
-                <li>{% icon 'logout' %} logout</li>
-
-                <li>{% icon 'thumbtack' %} thumbtack</li>
-                <li>{% icon 'resubmit' %} resubmit</li>
-                <li>{% icon 'uni52' %} uni52</li>
-            </ul>
-        </section>
+            {% for folder, icons in all_icons %}
+                {% if folder == "wagtailadmin/icons" %}
+                    {# Bespoke copy script with good line breaks to review icon update diffs in git. #}
+                    <!-- Copy this section to update the `icons.md` documentation (wagtail_icons.html file). -->
+                    <!-- In DevTools: copy($$('[data-icons-table^="wagtailadmin"]')[0].innerHTML.replace(/\s+/g, ' ').replace(/<t/g, '\n<t')) -->
+                {% endif %}
+                <div class="w-mb-10" data-icons-table="{{ folder }}">
+                    <!-- Auto-generated with Wagtail’s styleguide. -->
+                    <table class="w-w-full">
+                        <caption><code>register_icons</code> entries from <code>{{ folder }}</code></caption>
+                        <thead>
+                            <tr>
+                                <th scope="col">Visual</th>
+                                <th scope="col">Name</th>
+                                <th scope="col">Source</th>
+                                <th scope="col">File path</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            {% for item in icons %}
+                                <tr>
+                                    {# Renders the icon’s SVG within a SVG element, #}
+                                    {# so we fully control the rendering without changing the icon’s markup. #}
+                                    {# Icons are loaded with render_to_string, so need |safe. #}
+                                    <td><svg width="32" height="32" fill="currentColor">{{ item.icon|safe }}</svg></td>
+                                    <td><code>{{ item.name }}</code></td>
+                                    <td>{{ item.source }}</td>
+                                    <td><code>{{ item.file_path }}</code></td>
+                                </tr>
+                            {% endfor %}
+                        </tbody>
+                    </table>
+                </div>
+            {% endfor %}
+        {% endpanel %}
     </div>
 
 {% endblock %}

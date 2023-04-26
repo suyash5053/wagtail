@@ -1,5 +1,6 @@
 from django.test import RequestFactory, TestCase
 from django.urls import reverse
+from django.utils import translation
 
 from wagtail import hooks
 from wagtail.admin.menu import (
@@ -9,6 +10,7 @@ from wagtail.admin.menu import (
     Menu,
     MenuItem,
     SubmenuMenuItem,
+    admin_menu,
 )
 from wagtail.admin.ui import sidebar
 from wagtail.test.utils import WagtailTestUtils
@@ -151,8 +153,13 @@ class TestMenuRendering(WagtailTestUtils, TestCase):
         self.assertEqual(
             rendered[0].attrs,
             # Should not be dismissed
-            {"data-wagtail-dismissible-id": "dismissible-submenu-menu-item"},
+            {
+                "data-controller": "w-dismissible",
+                "data-w-dismissible-dismissed-class": "w-dismissible--dismissed",
+                "data-w-dismissible-id-value": "dismissible-submenu-menu-item",
+            },
         )
+
         self.assertListEqual(
             rendered[0].menu_items,
             [
@@ -161,7 +168,11 @@ class TestMenuRendering(WagtailTestUtils, TestCase):
                     "Pages",
                     "/pages/",
                     # Should not be dismissed
-                    attrs={"data-wagtail-dismissible-id": "dismissible-menu-item"},
+                    attrs={
+                        "data-controller": "w-dismissible",
+                        "data-w-dismissible-dismissed-class": "w-dismissible--dismissed",
+                        "data-w-dismissible-id-value": "dismissible-menu-item",
+                    },
                 ),
             ],
         )
@@ -209,9 +220,11 @@ class TestMenuRendering(WagtailTestUtils, TestCase):
         self.assertEqual(
             rendered[0].attrs,
             {
-                "data-wagtail-dismissible-id": "dismissible-submenu-menu-item",
+                "data-controller": "w-dismissible",
+                "data-w-dismissible-dismissed-class": "w-dismissible--dismissed",
+                "data-w-dismissible-id-value": "dismissible-submenu-menu-item",
                 # Should be dismissed
-                "data-wagtail-dismissed": "",
+                "data-w-dismissible-dismissed-value": "true",
             },
         )
         self.assertListEqual(
@@ -223,8 +236,10 @@ class TestMenuRendering(WagtailTestUtils, TestCase):
                     "/pages/",
                     # Should be dismissed
                     attrs={
-                        "data-wagtail-dismissible-id": "dismissible-menu-item",
-                        "data-wagtail-dismissed": "",
+                        "data-controller": "w-dismissible",
+                        "data-w-dismissible-dismissed-class": "w-dismissible--dismissed",
+                        "data-w-dismissible-id-value": "dismissible-menu-item",
+                        "data-w-dismissible-dismissed-value": "true",
                     },
                 ),
             ],
@@ -269,7 +284,11 @@ class TestMenuRendering(WagtailTestUtils, TestCase):
         self.assertEqual(rendered[0].label, "My dismissible submenu")
         self.assertEqual(
             rendered[0].attrs,
-            {"data-wagtail-dismissible-id": "dismissible-submenu-menu-item"},
+            {
+                "data-controller": "w-dismissible",
+                "data-w-dismissible-dismissed-class": "w-dismissible--dismissed",
+                "data-w-dismissible-id-value": "dismissible-submenu-menu-item",
+            },
         )
         self.assertListEqual(
             rendered[0].menu_items,
@@ -278,7 +297,11 @@ class TestMenuRendering(WagtailTestUtils, TestCase):
                     "dismissible-menu-item",
                     "Pages",
                     "/pages/",
-                    attrs={"data-wagtail-dismissible-id": "dismissible-menu-item"},
+                    attrs={
+                        "data-controller": "w-dismissible",
+                        "data-w-dismissible-dismissed-class": "w-dismissible--dismissed",
+                        "data-w-dismissible-id-value": "dismissible-menu-item",
+                    },
                 ),
             ],
         )
@@ -315,3 +338,33 @@ class TestMenuRendering(WagtailTestUtils, TestCase):
                 sidebar.LinkMenuItem("pages", "Pages", "/pages/"),
             ],
         )
+
+    def test_menu_items_have_names(self):
+        # Delete the registered_menu_items cache
+        try:
+            del admin_menu.registered_menu_items
+        # The cache may not be created yet if the test is run in isolation
+        except AttributeError:
+            pass
+
+        # Generate the menu items using a different language
+        with translation.override("fr"):
+            names = {item.name for item in admin_menu.registered_menu_items}
+
+        # Default menu items
+        expected = {
+            "explorer",
+            "images",
+            "documents",
+            "snippets",
+            "forms",
+            "reports",
+            "settings",
+            "help",
+        }
+
+        # If some of the above items do not have a name, they will be
+        # automatically generated from the label, which is translatable.
+        # We want the name to be consistent across languages, so this test will
+        # fail if the label is translated.
+        self.assertFalse(expected - names)

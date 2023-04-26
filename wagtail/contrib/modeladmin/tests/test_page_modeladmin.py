@@ -1,3 +1,4 @@
+from django import VERSION as DJANGO_VERSION
 from django.contrib.auth.models import Group, Permission
 from django.test import TestCase
 
@@ -37,6 +38,25 @@ class TestIndexView(WagtailTestUtils, TestCase):
 
         for eventpage in response.context["object_list"]:
             self.assertEqual(eventpage.audience, "public")
+
+    def test_filter_multivalue(self):
+        # Filter by audience
+        response = self.get(audience__exact=["public", "private"])
+
+        self.assertEqual(response.status_code, 200)
+
+        if DJANGO_VERSION >= (5, 0):
+            # Multi-valued query parameters are supported as of
+            # https://github.com/django/django/pull/16621
+            # Should return both public and private events
+            self.assertEqual(response.context["result_count"], 4)
+            for eventpage in response.context["object_list"]:
+                self.assertIn(eventpage.audience, ["public", "private"])
+        else:
+            # Should use the last value, thus only return private events
+            self.assertEqual(response.context["result_count"], 1)
+            for eventpage in response.context["object_list"]:
+                self.assertEqual(eventpage.audience, "private")
 
     def test_search(self):
         response = self.get(q="Someone")
@@ -285,6 +305,21 @@ class TestChooseParentView(WagtailTestUtils, TestCase):
             </p>
         """
         self.assertContains(response, expected, html=True)
+
+    def test_page_title_html_escaping(self):
+        homepage = Page.objects.get(url_path="/home/")
+        business_index = BusinessIndex(
+            title="Title with <script>alert('XSS')</script>",
+        )
+        homepage.add_child(instance=business_index)
+
+        response = self.client.get("/admin/tests/businesschild/choose_parent/")
+
+        self.assertEqual(response.status_code, 200)
+        self.assertNotContains(response, "Title with <script>alert('XSS')</script>")
+        self.assertContains(
+            response, "Title with &lt;script&gt;alert(&#x27;XSS&#x27;)&lt;/script&gt;"
+        )
 
 
 class TestChooseParentViewForNonSuperuser(WagtailTestUtils, TestCase):

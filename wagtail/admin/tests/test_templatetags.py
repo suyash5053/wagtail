@@ -490,11 +490,11 @@ class IconTagTest(TestCase):
     def test_basic(self):
         template = """
             {% load wagtailadmin_tags %}
-            {% icon "wagtail" %}
+            {% icon name="cogs" %}
         """
 
         expected = """
-            <svg aria-hidden="true" class="icon icon-wagtail icon"><use href="#icon-wagtail"></svg>
+            <svg aria-hidden="true" class="icon icon-cogs icon"><use href="#icon-cogs"></svg>
         """
 
         self.assertHTMLEqual(expected, Template(template).render(Context()))
@@ -514,7 +514,7 @@ class IconTagTest(TestCase):
     def test_with_classes_keyword(self):
         template = """
             {% load wagtailadmin_tags %}
-            {% icon "warning" classname="myclass" %}
+            {% icon name="warning" classname="myclass" %}
         """
 
         expected = """
@@ -526,7 +526,7 @@ class IconTagTest(TestCase):
     def test_with_classes_obsolete_keyword(self):
         template = """
             {% load wagtailadmin_tags %}
-            {% icon "doc-empty" class_name="myclass" %}
+            {% icon name="doc-empty" class_name="myclass" %}
         """
 
         expected = """
@@ -544,23 +544,60 @@ class IconTagTest(TestCase):
         ):
             self.assertHTMLEqual(expected, Template(template).render(Context()))
 
+    def test_with_deprecated_icon(self):
+        template = """
+            {% load wagtailadmin_tags %}
+            {% icon name="reset" %}
+        """
+
+        expected = """
+            <svg aria-hidden="true" class="icon icon-reset icon"><use href="#icon-reset"></svg>
+        """
+
+        with self.assertWarnsMessage(
+            RemovedInWagtail60Warning,
+            ("Icon `reset` is deprecated and will be removed in a future release."),
+        ):
+            self.assertHTMLEqual(expected, Template(template).render(Context()))
+
+    def test_with_renamed_icon(self):
+        template = """
+            {% load wagtailadmin_tags %}
+            {% icon name="download-alt" %}
+        """
+
+        expected = """
+            <svg aria-hidden="true" class="icon icon-download icon"><use href="#icon-download"></svg>
+        """
+
+        with self.assertWarnsMessage(
+            RemovedInWagtail60Warning,
+            (
+                "Icon `download-alt` has been renamed to `download`, "
+                "please adopt the new usage instead. Replace "
+                '`{% icon name="download-alt" ... %}` with '
+                '`{% icon name="download" ... %}'
+            ),
+        ):
+            self.assertHTMLEqual(expected, Template(template).render(Context()))
+
 
 class StatusTagTest(TestCase):
     def test_render_block_component_span_variations(self):
         template = """
             {% load wagtailadmin_tags i18n %}
-            {% status "live" classname="primary" %}
+            {% status "live" classname="w-status--primary" %}
             {% status "live" %}
             {% trans "hidden translated label" as trans_hidden_label %}
-            {% status "live" hidden_label=trans_hidden_label classname="primary" %}
+            {% status "live" hidden_label=trans_hidden_label classname="w-status--primary" %}
             {% status %}
         """
 
         expected = """
-            <span class="status-tag primary">live</span>
-            <span class="status-tag">live</span>
-            <span class="status-tag primary"><span class="visuallyhidden">hidden translated label</span>live</span>
-            <span class="status-tag"></span>
+            <span class="w-status w-status--primary">live</span>
+            <span class="w-status">live</span>
+            <span class="w-status w-status--primary"><span class="visuallyhidden">hidden translated label</span>live</span>
+            <span class="w-status"></span>
         """
 
         self.assertHTMLEqual(expected, Template(template).render(Context()))
@@ -570,24 +607,24 @@ class StatusTagTest(TestCase):
             {% load wagtailadmin_tags i18n %}
             {% trans "title" as trans_title %}
             {% trans "hidden label" as trans_hidden_label %}
-            {% status "live" url="/test-url/" title=trans_title hidden_label=trans_hidden_label classname="primary" attrs='target="_blank" rel="noreferrer"' %}
-            {% status "live" url="/test-url/" title=trans_title classname="primary" %}
+            {% status "live" url="/test-url/" title=trans_title hidden_label=trans_hidden_label classname="w-status--primary" attrs='target="_blank" rel="noreferrer"' %}
+            {% status "live" url="/test-url/" title=trans_title classname="w-status--primary" %}
             {% status "live" url="/test-url/" title=trans_title %}
             {% status  url="/test-url/" title=trans_title attrs='id="my-status"' %}
         """
 
         expected = """
-            <a href="/test-url/" class="status-tag primary" title="title" target="_blank" rel="noreferrer">
+            <a href="/test-url/" class="w-status w-status--primary" title="title" target="_blank" rel="noreferrer">
                 <span class="visuallyhidden">hidden label</span>
                 live
             </a>
-            <a href="/test-url/" class="status-tag primary" title="title">
+            <a href="/test-url/" class="w-status w-status--primary" title="title">
                 live
             </a>
-            <a href="/test-url/" class="status-tag" title="title">
+            <a href="/test-url/" class="w-status" title="title">
                 live
             </a>
-            <a href="/test-url/" class="status-tag" title="title" id="my-status">
+            <a href="/test-url/" class="w-status" title="title" id="my-status">
             </a>
         """
 
@@ -599,18 +636,18 @@ class StatusTagTest(TestCase):
             {% fragment as var %}
                 {% trans "title" as trans_title %}
                 {% trans "hidden label" as trans_hidden_label %}
-                {% status "live" url="/test-url/" title=trans_title hidden_label=trans_hidden_label classname="primary" attrs='target="_blank" rel="noreferrer"' %}
-                {% status "live" hidden_label=trans_hidden_label classname="primary" attrs="data-example='present'" %}
+                {% status "live" url="/test-url/" title=trans_title hidden_label=trans_hidden_label classname="w-status--primary" attrs='target="_blank" rel="noreferrer"' %}
+                {% status "live" hidden_label=trans_hidden_label classname="w-status--primary" attrs="data-example='present'" %}
             {% endfragment %}
             {{var}}
         """
 
         expected = """
-            <a href="/test-url/" class="status-tag primary" title="title" target="_blank" rel="noreferrer">
+            <a href="/test-url/" class="w-status w-status--primary" title="title" target="_blank" rel="noreferrer">
                 <span class="visuallyhidden">hidden label</span>
                 live
             </a>
-            <span class="status-tag primary" data-example='present'>
+            <span class="w-status w-status--primary" data-example='present'>
                 <span class="visuallyhidden">hidden label</span>
                 live
             </span>

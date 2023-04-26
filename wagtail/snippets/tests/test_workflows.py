@@ -40,10 +40,8 @@ class BaseWorkflowsTestCase(WagtailTestUtils, TestCase):
         return self.model._meta.verbose_name
 
     def get_url(self, name, args=None):
-        app_label = self.object._meta.app_label
-        model_name = self.object._meta.model_name
         args = args if args is not None else [quote(self.object.pk)]
-        return reverse(f"wagtailsnippets_{app_label}_{model_name}:{name}", args=args)
+        return reverse(self.object.snippet_viewset.get_url_name(name), args=args)
 
 
 class TestCreateView(BaseWorkflowsTestCase):
@@ -316,7 +314,7 @@ class TestConfirmWorkflowCancellation(BaseWorkflowsTestCase):
         response = self.client.get(self.get_url("confirm_workflow_cancellation"))
         self.assertEqual(response.status_code, 200)
         self.assertTemplateUsed(
-            response, "wagtailadmin/shared/confirm_workflow_cancellation.html"
+            response, "wagtailadmin/generic/confirm_workflow_cancellation.html"
         )
         self.assertContains(
             response,
@@ -332,7 +330,7 @@ class TestConfirmWorkflowCancellation(BaseWorkflowsTestCase):
         self.assertEqual(response.status_code, 200)
         self.assertTemplateNotUsed(
             response,
-            "wagtailadmin/shared/confirm_workflow_cancellation.html",
+            "wagtailadmin/generic/confirm_workflow_cancellation.html",
         )
         self.assertJSONEqual(
             response.content.decode(),

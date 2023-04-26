@@ -444,6 +444,100 @@ class TestPageEdit(WagtailTestUtils, TestCase):
             "This publishing schedule will only take effect after you have published",
         )
 
+    def test_edit_post_scheduled_custom_timezone(self):
+        # Set user's timezone to something different from the server timezone
+        UserProfile.objects.update_or_create(
+            user=self.user,
+            defaults={"current_time_zone": "Asia/Jakarta"},
+        )
+
+        post_data = {
+            "title": "I've been edited!",
+            "content": "Some content",
+            "slug": "hello-world",
+            "go_live_at": "2022-03-20 06:00",
+        }
+        edit_url = reverse("wagtailadmin_pages:edit", args=(self.child_page.id,))
+        response = self.client.post(edit_url, post_data, follow=True)
+        html = response.content.decode()
+
+        # Should be redirected to the edit page again
+        self.assertRedirects(response, edit_url, 302, 200)
+
+        child_page_new = SimplePage.objects.get(id=self.child_page.id)
+
+        # The page will still be live
+        self.assertTrue(child_page_new.live)
+
+        # A revision with approved_go_live_at should not exist
+        self.assertFalse(
+            Revision.page_revisions.filter(object_id=child_page_new.id)
+            .exclude(approved_go_live_at__isnull=True)
+            .exists()
+        )
+
+        # But a revision with go_live_at in their content json *should* exist
+        if settings.USE_TZ:
+            # The saved timestamp should be in UTC
+            self.assertTrue(
+                Revision.page_revisions.filter(
+                    object_id=child_page_new.id,
+                    content__go_live_at="2022-03-19T23:00:00Z",
+                ).exists()
+            )
+        else:
+            # Without TZ support, just use the submitted timestamp as-is
+            self.assertTrue(
+                Revision.page_revisions.filter(
+                    object_id=child_page_new.id,
+                    content__go_live_at="2022-03-20T06:00:00",
+                ).exists()
+            )
+
+        # Should show the draft go_live_at under the "Once published" label
+        # and should be in the user's timezone
+        self.assertContains(
+            response,
+            '<div class="w-label-3">Once published:</div>',
+            html=True,
+            count=1,
+        )
+        self.assertContains(
+            response,
+            '<span class="w-text-primary">Go-live:</span> March 20, 2022, 6 a.m.',
+            html=True,
+            count=1,
+        )
+
+        # Should show the "Edit schedule" button
+        self.assertTagInHTML(
+            '<button type="button" data-a11y-dialog-show="schedule-publishing-dialog">Edit schedule</button>',
+            html,
+            count=1,
+            allow_extra_attrs=True,
+        )
+
+        # Should show the dialog template pointing to the [data-edit-form] selector as the root
+        self.assertTagInHTML(
+            '<div id="schedule-publishing-dialog" class="w-dialog publishing" data-dialog-root-selector="[data-edit-form]">',
+            html,
+            count=1,
+            allow_extra_attrs=True,
+        )
+
+        # Should show the input with the correct value in the user's timezone
+        self.assertTagInHTML(
+            '<input type="text" name="go_live_at" value="2022-03-20 06:00">',
+            html,
+            count=1,
+            allow_extra_attrs=True,
+        )
+
+        self.assertContains(
+            response,
+            "This publishing schedule will only take effect after you have published",
+        )
+
     def test_schedule_panel_without_publish_permission(self):
         editor = self.create_user("editor", password="password")
         editor.groups.add(Group.objects.get(name="Editors"))
@@ -519,57 +613,60 @@ class TestPageEdit(WagtailTestUtils, TestCase):
         mock_handler = mock.MagicMock()
         page_published.connect(mock_handler)
 
-        # Set has_unpublished_changes=True on the existing record to confirm that the publish action
-        # is resetting it (and not just leaving it alone)
-        self.child_page.has_unpublished_changes = True
-        self.child_page.save()
+        try:
+            # Set has_unpublished_changes=True on the existing record to confirm that the publish action
+            # is resetting it (and not just leaving it alone)
+            self.child_page.has_unpublished_changes = True
+            self.child_page.save()
 
-        # Save current value of first_published_at so we can check that it doesn't change
-        first_published_at = SimplePage.objects.get(
-            id=self.child_page.id
-        ).first_published_at
+            # Save current value of first_published_at so we can check that it doesn't change
+            first_published_at = SimplePage.objects.get(
+                id=self.child_page.id
+            ).first_published_at
 
-        # Tests publish from edit page
-        post_data = {
-            "title": "I've been edited!",
-            "content": "Some content",
-            "slug": "hello-world-new",
-            "action-publish": "Publish",
-        }
-        response = self.client.post(
-            reverse("wagtailadmin_pages:edit", args=(self.child_page.id,)),
-            post_data,
-            follow=True,
-        )
+            # Tests publish from edit page
+            post_data = {
+                "title": "I've been edited!",
+                "content": "Some content",
+                "slug": "hello-world-new",
+                "action-publish": "Publish",
+            }
+            response = self.client.post(
+                reverse("wagtailadmin_pages:edit", args=(self.child_page.id,)),
+                post_data,
+                follow=True,
+            )
 
-        # Should be redirected to explorer
-        self.assertRedirects(
-            response, reverse("wagtailadmin_explore", args=(self.root_page.id,))
-        )
+            # Should be redirected to explorer
+            self.assertRedirects(
+                response, reverse("wagtailadmin_explore", args=(self.root_page.id,))
+            )
 
-        # Check that the page was edited
-        child_page_new = SimplePage.objects.get(id=self.child_page.id)
-        self.assertEqual(child_page_new.title, post_data["title"])
-        self.assertEqual(child_page_new.draft_title, post_data["title"])
+            # Check that the page was edited
+            child_page_new = SimplePage.objects.get(id=self.child_page.id)
+            self.assertEqual(child_page_new.title, post_data["title"])
+            self.assertEqual(child_page_new.draft_title, post_data["title"])
 
-        # Check that the page_published signal was fired
-        self.assertEqual(mock_handler.call_count, 1)
-        mock_call = mock_handler.mock_calls[0][2]
+            # Check that the page_published signal was fired
+            self.assertEqual(mock_handler.call_count, 1)
+            mock_call = mock_handler.mock_calls[0][2]
 
-        self.assertEqual(mock_call["sender"], child_page_new.specific_class)
-        self.assertEqual(mock_call["instance"], child_page_new)
-        self.assertIsInstance(mock_call["instance"], child_page_new.specific_class)
+            self.assertEqual(mock_call["sender"], child_page_new.specific_class)
+            self.assertEqual(mock_call["instance"], child_page_new)
+            self.assertIsInstance(mock_call["instance"], child_page_new.specific_class)
 
-        # The page shouldn't have "has_unpublished_changes" flag set
-        self.assertFalse(child_page_new.has_unpublished_changes)
+            # The page shouldn't have "has_unpublished_changes" flag set
+            self.assertFalse(child_page_new.has_unpublished_changes)
 
-        # first_published_at should not change as it was already set
-        self.assertEqual(first_published_at, child_page_new.first_published_at)
+            # first_published_at should not change as it was already set
+            self.assertEqual(first_published_at, child_page_new.first_published_at)
 
-        # The "View Live" button should have the updated slug.
-        for message in response.context["messages"]:
-            self.assertIn("hello-world-new", message.message)
-            break
+            # The "View Live" button should have the updated slug.
+            for message in response.context["messages"]:
+                self.assertIn("hello-world-new", message.message)
+                break
+        finally:
+            page_published.disconnect(mock_handler)
 
     def test_first_published_at_editable(self):
         """Test that we can update the first_published_at via the Page edit form,
@@ -1482,7 +1579,7 @@ class TestPageEdit(WagtailTestUtils, TestCase):
             reverse("wagtailadmin_pages:edit", args=(self.child_page.id,))
         )
 
-        input_field_for_draft_slug = '<input type="text" name="slug" value="revised-slug-in-draft-only" data-controller="w-slug" data-action="blur-&gt;w-slug#slugify" data-w-slug-allow-unicode-value maxlength="255" aria-describedby="panel-child-promote-child-for_search_engines-child-slug-helptext" required id="id_slug">'
+        input_field_for_draft_slug = '<input type="text" name="slug" value="revised-slug-in-draft-only" data-controller="w-slug" data-action="blur-&gt;w-slug#slugify w-sync:check-&gt;w-slug#compare w-sync:apply-&gt;w-slug#urlify:prevent" data-w-slug-allow-unicode-value maxlength="255" aria-describedby="panel-child-promote-child-for_search_engines-child-slug-helptext" required id="id_slug">'
         input_field_for_live_slug = '<input type="text" name="slug" value="hello-world" maxlength="255" aria-describedby="panel-child-promote-child-for_search_engines-child-slug-helptext" required id="id_slug" />'
 
         # Status Link should be the live page (not revision)
